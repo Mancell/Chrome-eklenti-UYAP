@@ -1,7 +1,11 @@
-// Popup: ayarları saklar, senkronu başlatır, ilerlemeyi gösterir.
+// Popup: token'ı saklar, senkronu başlatır, ilerlemeyi gösterir.
 //
-// Ayarlar `chrome.storage.local`'da — yalnız bu tarayıcıda. Token bir SIRDIR:
-// başka hiçbir yere gönderilmez, yalnız senkronda Supabase RPC gövdesinde gider.
+// Kullanıcıdan istenen TEK şey token. Sunucu adresi ve genel anahtar eklentiye
+// gömülü (bkz. ayarlar.js) — her kurulumda aynı olan, kullanıcıya ait olmayan
+// değerleri vatandaştan istemek anlamsızdı.
+//
+// Token `chrome.storage.local`'da — yalnız bu tarayıcıda. Bir SIRDIR: başka
+// hiçbir yere gönderilmez, yalnız senkronda Supabase RPC gövdesinde gider.
 
 const $ = (id) => document.getElementById(id);
 const durum = (metin, sinif = '') => {
@@ -10,20 +14,16 @@ const durum = (metin, sinif = '') => {
   d.className = sinif;
 };
 
-const ALANLAR = ['token', 'supabaseUrl', 'supabaseAnon'];
-
 (async () => {
-  const a = await chrome.storage.local.get([...ALANLAR, 'kesifAcik']);
-  for (const k of ALANLAR) $(k).value = a[k] || '';
+  const a = await chrome.storage.local.get(['token', 'kesifAcik']);
+  $('token').value = a.token || '';
   $('kesifAcik').checked = Boolean(a.kesifAcik);
 })();
 
 $('kaydet').addEventListener('click', async () => {
-  const deger = Object.fromEntries(ALANLAR.map((k) => [k, $(k).value.trim()]));
-  if (ALANLAR.some((k) => !deger[k])) {
-    return durum('Üç alanı da doldurun.', 'hata');
-  }
-  await chrome.storage.local.set(deger);
+  const token = $('token').value.trim();
+  if (!token) return durum('Panelden aldığınız token’ı yapıştırın.', 'hata');
+  await chrome.storage.local.set({ token });
   durum('Bağlanılıyor…');
   chrome.runtime.sendMessage({ tip: 'baglan' });
 });

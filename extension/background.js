@@ -12,6 +12,7 @@
 // yalnız kullanıcı butona basınca çalışır: alarm yok, sayfa açılınca otomatik
 // çekme yok, arka plan taraması yok.
 import { evrakMetni } from './evrak.js';
+import { SUNUCU, GENEL_ANAHTAR } from './ayarlar.js';
 
 const NEZAKET_MS = 800;
 // ponytail: evrak indirme tavanı. Kaldırmak yerine sayfalamak gerekirse
@@ -25,12 +26,12 @@ function bildir(msg) {
   chrome.runtime.sendMessage(msg).catch(() => {});
 }
 
+// Kullanıcıdan istenen TEK şey token. Sunucu adresi ve genel anahtar eklentiye
+// gömülü (bkz. ayarlar.js) — her kurulumda aynı, kullanıcıya ait değil.
 async function ayarlar() {
-  const a = await chrome.storage.local.get(['token', 'supabaseUrl', 'supabaseAnon']);
-  if (!a.token || !a.supabaseUrl || !a.supabaseAnon) {
-    throw new Error('Önce token ve sunucu bilgilerini kaydedin.');
-  }
-  return { ...a, supabaseUrl: a.supabaseUrl.replace(/\/+$/, '') };
+  const { token } = await chrome.storage.local.get('token');
+  if (!token) throw new Error('Önce panelden aldığınız token’ı kaydedin.');
+  return { token, supabaseUrl: SUNUCU, supabaseAnon: GENEL_ANAHTAR };
 }
 
 // `tabs` izni YOK ve gerekmiyor: url'e göre sorgulamak için host izni yeterli

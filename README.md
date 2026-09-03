@@ -65,7 +65,8 @@ cd web && npm install && cp .env.example .env.local && npm run dev
 ### 3. Eklenti
 
 `chrome://extensions` → Geliştirici modu → Paketlenmemiş yükle → `extension/`.
-Sonrası panelin **Kurulum** sayfasındaki 5 adım.
+Sonrası panelin **Kurulum** sayfasındaki 5 adım — kullanıcıdan istenen tek şey
+token; sunucu adresi ve genel anahtar `extension/ayarlar.js`'e gömülü.
 
 ## Testler
 

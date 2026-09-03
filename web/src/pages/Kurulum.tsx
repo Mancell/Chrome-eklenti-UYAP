@@ -99,7 +99,7 @@ export default function Kurulum() {
           <h3>Token'ı eklentiye yapıştırın</h3>
           <p>
             Tarayıcının sağ üstündeki Av. Asistan simgesine tıklayın; açılan kutuya 1. adımdaki
-            token'ı ve panelin sunucu adresini yapıştırıp <b>Kaydet ve Bağlan</b>'a basın.
+            token'ı yapıştırıp <b>Bağlan</b>'a basın. Başka bir şey girmeniz gerekmez.
           </p>
         </div>
       </div>

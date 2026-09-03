@@ -18,13 +18,13 @@ klasör olduğu gibi yüklenir.
 1. `chrome://extensions` → Geliştirici modu → **Paketlenmemiş yükle** → bu
    `extension/` klasörü.
 2. Panelde **Kurulum** sayfasından token üretin.
-3. Eklenti popup'ına token + Supabase adresi + anon key yazıp
-   **Kaydet ve Bağlan**.
+3. Eklenti popup'ına **yalnız token**'ı yapıştırıp **Bağlan**.
 4. `vatandas.uyap.gov.tr`'ye girin, **Dosyalarım**'a gidin,
    **Senkronu başlat**.
 
-`manifest.json` içindeki `host_permissions` varsayılan olarak `*.supabase.co`
-kapsıyor. Kendi alan adınızı kullanıyorsanız oraya ekleyin.
+Sunucu adresi ve genel anahtar kullanıcıya sorulmuyor: `ayarlar.js`'e gömülü.
+Başka bir Supabase projesine bağlanacaksanız oradaki iki sabiti ve
+`manifest.json`'daki `host_permissions` adresini değiştirin.
 
 ## Dosyalar
 
@@ -34,7 +34,8 @@ kapsıyor. Kendi alan adınızı kullanıyorsanız oraya ekleyin.
 | `kesif.js` | MAIN world, varsayılan kapalı. `fetch`/`XHR` kaydedici; Faz 0 keşif aracı |
 | `evrak.js` | Evrak baytı → düz metin. UDF (ZIP+CDATA) çalışıyor; PDF bu turda çıkarılmıyor |
 | `background.js` | Orkestrasyon + tek `eklenti_senkron` RPC çağrısı |
-| `popup.*` | Ayarlar, senkron, ilerleme, keşif modu |
+| `ayarlar.js` | Panel adresi + genel anahtar (gömülü, public değerler). `service_role` ASLA buraya konmaz |
+| `popup.*` | Token girişi, senkron, ilerleme, keşif modu |
 
 ## Test
 
