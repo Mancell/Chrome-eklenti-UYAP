@@ -31,7 +31,7 @@ Başka bir Supabase projesine bağlanacaksanız oradaki iki sabiti ve
 | Dosya | İş |
 |---|---|
 | `uyap.js` | İçerik betiği (ISOLATED). UYAP'tan veri çeker. **`UCLAR` boş — bkz. `docs/uyap-uclari.md`** |
-| `kesif.js` | MAIN world, varsayılan kapalı. `fetch`/`XHR` kaydedici; Faz 0 keşif aracı |
+| `kesif.js` | MAIN world `fetch`/`XHR` kaydedici. **Statik değil**: yalnız keşif açıkken `chrome.scripting` ile kaydediliyor — betiğin varlığı bayrağın kendisi |
 | `evrak.js` | Evrak baytı → düz metin. UDF (ZIP+CDATA) çalışıyor; PDF bu turda çıkarılmıyor |
 | `background.js` | Orkestrasyon + tek `eklenti_senkron` RPC çağrısı |
 | `ayarlar.js` | Panel adresi + genel anahtar (gömülü, public değerler). `service_role` ASLA buraya konmaz |
@@ -40,11 +40,16 @@ Başka bir Supabase projesine bağlanacaksanız oradaki iki sabiti ve
 ## Test
 
 ```bash
-node --test extension/evrak.test.mjs
+node --test extension/evrak.test.mjs extension/kesif.test.mjs
 ```
 
-Tarayıcı gerekmez, bağımlılık yok. Gerçek bir UDF (zip + deflate) üretip metni
-geri çıkarır; bozuk baytta fırlatmadığını doğrular.
+Tarayıcı gerekmez, bağımlılık yok.
+
+- `evrak.test.mjs` — gerçek bir UDF (zip + deflate) üretip metni geri çıkarır;
+  bozuk baytta fırlatmadığını doğrular.
+- `kesif.test.mjs` — `node:vm` içinde sahte bir sayfa kurup kaydedicinin
+  isteği gerçekten yakaladığını doğrular. Bu bileşen iki kez SESSİZCE çöktü
+  (MAIN/ISOLATED el sıkışma yarışı); test tam o şeyi ölçüyor.
 
 ## Bilinen tavan
 

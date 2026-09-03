@@ -41,14 +41,16 @@
       <summary>Sorun giderme — keşif modu</summary>
       <p class="alt">
         UYAP uçları değişirse senkron durur. Keşif modunu açıp portalda gezinin,
-        kaydı indirip geliştiriciye iletin. Kayıtta çerez/şifre <b>yoktur</b> ve
-        tarayıcı kapanınca silinir.
+        kaydı geliştiriciye iletin. Kayıtta çerez/şifre <b>yoktur</b>, sayfanın
+        belleğinde durur ve sekme kapanınca silinir.
       </p>
       <div class="satir">
         <input id="kesifAcik" type="checkbox" />
         <label for="kesifAcik" style="margin:0">Keşif modu açık</label>
       </div>
-      <button id="kesifIndir" class="ikincil">Keşif kaydını indir</button>
+      <p id="kesifSayac" class="alt" style="margin:8px 0 0"></p>
+      <button id="kesifKopyala" class="ikincil">Kaydı kopyala</button>
+      <button id="kesifIndir" class="ikincil">Dosya olarak indir</button>
     </details>
 
     <script src="popup.js" type="module"></script>

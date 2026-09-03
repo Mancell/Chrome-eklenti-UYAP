@@ -71,7 +71,7 @@ token; sunucu adresi ve genel anahtar `extension/ayarlar.js`'e gömülü.
 ## Testler
 
 ```bash
-node --test extension/evrak.test.mjs
+node --test extension/evrak.test.mjs extension/kesif.test.mjs
 ```
 
 Veritabanı testleri Docker gerektirmez — düz bir Postgres yeter:

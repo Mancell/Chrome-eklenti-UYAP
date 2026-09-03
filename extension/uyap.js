@@ -139,31 +139,35 @@ async function tebligatlar() {
 }
 
 // ---------------------------------------------------------------------------
-// Keşif köprüsü: MAIN world'deki kesif.js chrome.* göremiyor, kayıtları
-// buraya postMessage ile veriyor; storage'a burada yazılıyor.
+// Keşif hasadı
+//
+// MAIN world'deki kesif.js `chrome.*` göremiyor; kayıtları postMessage ile
+// veriyor. ESKİ TASARIM buradan MAIN world'e "keşif açık mı?" diye cevap
+// veriyordu — ama kesif.js `document_start`'ta soruyor, bu betik
+// `document_idle`'da yüklüyor: soru cevapsız kalıyor ve HİÇBİR ŞEY
+// KAYDEDİLMİYORDU. Artık bayrak yok: kesif.js yalnız keşif açıkken sayfaya
+// kaydediliyor (popup.js → chrome.scripting), varlığı bayrağın kendisi.
 // ---------------------------------------------------------------------------
-window.addEventListener('message', async (e) => {
-  if (e.source !== window || !e.data?.__uyapKesif) return;
 
-  if (e.data.__uyapKesif === 'durumSor') {
-    const { kesifAcik } = await chrome.storage.local.get('kesifAcik');
-    window.postMessage({ __uyapKesif: kesifAcik ? 'ac' : 'kapat' }, '*');
-  }
-
-  if (e.data.__uyapKesif === 'kayit') {
-    const { __uyap_kesif = [] } = await chrome.storage.session.get('__uyap_kesif');
-    if (__uyap_kesif.length >= 200) return;             // tavan; storage şişmesin
-    __uyap_kesif.push(e.data.kayit);
-    await chrome.storage.session.set({ __uyap_kesif });
-  }
-});
-
-// Keşif modu popup'tan açılıp kapandığında MAIN world'e haber ver.
-chrome.storage.onChanged.addListener((degisim, alan) => {
-  if (alan === 'local' && degisim.kesifAcik) {
-    window.postMessage({ __uyapKesif: degisim.kesifAcik.newValue ? 'ac' : 'kapat' }, '*');
-  }
-});
+/** MAIN world'den kayıt tamponunu ister. kesif.js kurulu değilse null döner. */
+function kesifHasadi(zamanAsimiMs = 1500) {
+  return new Promise((coz) => {
+    const dinleyici = (e) => {
+      if (e.source !== window || e.data?.__uyapKesif !== 'kayitlar') return;
+      window.removeEventListener('message', dinleyici);
+      clearTimeout(sayac);
+      coz({ kayitlar: e.data.kayitlar, kaynaklar: e.data.kaynaklar, sinir: e.data.sinir });
+    };
+    window.addEventListener('message', dinleyici);
+    // Zaman aşımı ŞART: keşif modu kapalıysa kesif.js sayfada yok ve cevap
+    // asla gelmez — popup sonsuza dek beklemesin.
+    const sayac = setTimeout(() => {
+      window.removeEventListener('message', dinleyici);
+      coz(null);
+    }, zamanAsimiMs);
+    window.postMessage({ __uyapKesif: 'ver' }, '*');
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Arka plandan gelen istekler
@@ -178,6 +182,7 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'evrak-listesi': return yanitla({ veri: await evrakListesi(istek.dosyaRef) });
         case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef) });
         case 'tebligatlar':   return yanitla({ veri: await tebligatlar() });
+        case 'kesif-al':      return yanitla({ kesif: await kesifHasadi() });
         default:              return yanitla({ hata: 'Bilinmeyen istek.' });
       }
     } catch (e) {

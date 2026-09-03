@@ -11,18 +11,38 @@ yanlış bir URL sessizce boş veri döndürüp senkronu "çalışıyor" gibi g�
 
 1. Eklentiyi yükleyin (bkz. `extension/README.md`).
 2. Popup → **Sorun giderme** → *Keşif modu açık*.
-3. `vatandas.uyap.gov.tr`'ye kendi bilgilerinizle girin ve sırayla gezinin:
+3. **UYAP sekmesini yenileyin (F5).** Bu adım ZORUNLU: kaydedici
+   `chrome.scripting` ile dinamik kaydediliyor ve dinamik betikler yalnız YENİ
+   sayfa yüklemelerinde devreye girer. Yenilemezseniz hiçbir şey kaydedilmez.
+4. `vatandas.uyap.gov.tr`'ye kendi bilgilerinizle girin ve sırayla gezinin:
    - Dosyalarım (liste)
    - Bir dosyaya girin (safahat)
    - Duruşma günleri
    - Bir evrakı görüntüleyin/indirin
    - e-Tebligat kutusu
-4. Popup → **Keşif kaydını indir** → JSON.
-5. Aşağıdaki tabloyu doldurun, sonra `extension/uyap.js`'teki `UCLAR`'ı ve ilgili
+5. Gezinirken popup'taki **sayacın arttığını doğrulayın**. Artmıyorsa kayıt da
+   yoktur — sayfalarca gezinmeye devam etmeyin, sayaç ne diyorsa onu okuyun.
+6. Popup → **Kaydı kopyala** → JSON panoya gider (dosya indirme yarışına
+   girmeden doğrudan yapıştırılabilir).
+7. Aşağıdaki tabloyu doldurun, sonra `extension/uyap.js`'teki `UCLAR`'ı ve ilgili
    `map` gövdelerini yazın.
 
 Kayıtta çerez, şifre veya `Authorization` başlığı **yoktur**; yanıtlardan yalnız
-alan adları ve ilk 3 örnek satır saklanır, tarayıcı kapanınca silinir.
+alan adları ve ilk 3 örnek satır saklanır, sayfanın belleğinde durur, sekme
+kapanınca silinir.
+
+## Sayaç boş çıkarsa — hangi sorun olduğunu ayırt etme
+
+Kayıt iki liste döndürür: `kayitlar` (yakalanan ajax) ve `kaynaklar`
+(PerformanceObserver'ın gördüğü TÜM ağ girdileri). Boş çıkınca:
+
+| `kayitlar` | `kaynaklar` | Anlamı |
+|---|---|---|
+| 0 | 0 | Kaydedici sayfada değil → sekme yenilenmedi |
+| 0 | `.ajx` istekleri var | Kanca yerleşimi yanlış → `kesif.js` düzeltilmeli |
+| 0 | yalnız `navigation` | **UYAP ajax kullanmıyor**, tam sayfa form POST → ajax kaydı yerine DOM kazıma gerekir |
+
+Üçüncü satır mimariyi değiştirir; `kaynaklar` tam bu ayrımı yapmak için var.
 
 ## Doldurulacak
 
