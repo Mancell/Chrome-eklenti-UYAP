@@ -21,8 +21,16 @@ const EVRAK_TAVANI = 50;
 
 const bekle = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Popup kapalıysa sendMessage fırlatır; ilerleme bildirimi kritik değil. */
+/**
+ * Durumu HEM canlı mesajla HEM storage'a yazar.
+ *
+ * MV3'te popup odağı kaybedince kapanıyor ve `sendMessage` alıcısız kalıyor —
+ * senkron arka planda sürerken kullanıcı popup'ı tekrar açtığında boş ekran
+ * görüyordu ("kesiliyor" izlenimi). `chrome.storage.session` popup kapalıyken
+ * de duruyor, tarayıcı kapanınca gidiyor: tam bu iş için doğru yer.
+ */
 function bildir(msg) {
+  chrome.storage.session.set({ sonDurum: msg }).catch(() => {});
   chrome.runtime.sendMessage(msg).catch(() => {});
 }
 

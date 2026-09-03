@@ -18,6 +18,11 @@ const durum = (metin, sinif = '') => {
   const a = await chrome.storage.local.get(['token', 'kesifAcik']);
   $('token').value = a.token || '';
   $('kesifAcik').checked = Boolean(a.kesifAcik);
+
+  // Popup kapalıyken gelen son durumu geri yükle: senkron arka planda sürerken
+  // popup'ı tekrar açan kullanıcı boş ekran görmesin.
+  const { sonDurum } = await chrome.storage.session.get('sonDurum');
+  if (sonDurum) gosterDurum(sonDurum);
 })();
 
 $('kaydet').addEventListener('click', async () => {
@@ -54,10 +59,14 @@ $('kesifIndir').addEventListener('click', async () => {
   durum(`${__uyap_kesif.length} istek indirildi.`, 'ok');
 });
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.tip === 'ilerleme') durum(msg.mesaj);
-  else if (msg.tip === 'baglandi') durum('Bağlandı. Artık senkronu başlatabilirsiniz.', 'ok');
-  else if (msg.tip === 'bitti') {
+/** Tek yerden render: hem canlı mesaj hem popup açılışındaki son durum. */
+function gosterDurum(msg) {
+  if (msg.tip === 'ilerleme') {
+    durum(msg.mesaj);
+    $('senkron').disabled = true;      // senkron sürüyor
+  } else if (msg.tip === 'baglandi') {
+    durum('Bağlandı. Artık senkronu başlatabilirsiniz.', 'ok');
+  } else if (msg.tip === 'bitti') {
     const s = msg.sonuc || {};
     durum(
       'Senkron bitti.\n' +
@@ -68,4 +77,6 @@ chrome.runtime.onMessage.addListener((msg) => {
     durum('Hata: ' + msg.mesaj, 'hata');
     $('senkron').disabled = false;
   }
-});
+}
+
+chrome.runtime.onMessage.addListener(gosterDurum);
