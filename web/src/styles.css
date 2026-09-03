@@ -1,0 +1,63 @@
+:root {
+  --kagit: #f3f2f2; --yuzey: #fff; --metin: #201e1d; --soluk: #605d5d;
+  --cizgi: #ddd8d8; --vurgu: #ec3013;
+  --kirmizi: #ae1800; --sari: #8a6100; --yesil: #1a6b34;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 -apple-system, system-ui, sans-serif;
+       color: var(--metin); background: var(--kagit); }
+a { color: var(--vurgu); }
+
+.kabuk { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.yan { background: var(--yuzey); border-right: 1px solid var(--cizgi); padding: 18px 0; }
+.yan h1 { font-size: 15px; margin: 0 18px 16px; }
+.yan button { display: block; width: 100%; text-align: left; padding: 9px 18px; border: 0;
+              background: none; font: inherit; color: var(--soluk); cursor: pointer; }
+.yan button.etkin { color: var(--metin); font-weight: 600; box-shadow: inset 3px 0 var(--vurgu); }
+.icerik { padding: 24px 28px; min-width: 0; }
+.icerik h2 { margin: 0 0 4px; font-size: 20px; }
+.alt { color: var(--soluk); font-size: 13px; margin: 0 0 18px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--yuzey); font-size: 13px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--cizgi);
+         vertical-align: top; }
+th { font-size: 12px; color: var(--soluk); font-weight: 600; }
+tbody tr:hover { background: #faf8f8; }
+tr.secilebilir { cursor: pointer; }
+.sarma { overflow-x: auto; border: 1px solid var(--cizgi); }
+
+.bos { padding: 28px; text-align: center; color: var(--soluk); background: var(--yuzey);
+       border: 1px dashed var(--cizgi); }
+.kirmizi { color: var(--kirmizi); font-weight: 600; }
+.sari { color: var(--sari); font-weight: 600; }
+.yesil { color: var(--yesil); }
+
+button.eylem { padding: 9px 14px; border: 0; background: var(--vurgu); color: #fff;
+               font: inherit; font-weight: 600; cursor: pointer; }
+button.eylem.ikincil { background: var(--metin); }
+button.eylem:disabled { opacity: .5; cursor: default; }
+input, select { padding: 8px; border: 1px solid var(--cizgi); background: var(--yuzey);
+                font: inherit; }
+
+.adim { background: var(--yuzey); border: 1px solid var(--cizgi); padding: 16px 18px;
+        margin-bottom: 12px; display: grid; grid-template-columns: 28px 1fr; gap: 14px; }
+.adim .no { width: 26px; height: 26px; border-radius: 50%; background: var(--metin);
+            color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; }
+.adim h3 { margin: 2px 0 6px; font-size: 14px; }
+.adim p { margin: 0 0 8px; color: var(--soluk); font-size: 13px; }
+.jeton { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all;
+         background: #f8f4f4; border: 1px solid var(--cizgi); padding: 10px; margin: 8px 0; }
+.uyari { color: var(--kirmizi); font-size: 12px; }
+
+.takvim { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+          background: var(--cizgi); border: 1px solid var(--cizgi); }
+.takvim > div { background: var(--yuzey); min-height: 86px; padding: 6px; font-size: 12px; }
+.takvim .basliksatir { min-height: 0; font-weight: 600; color: var(--soluk); text-align: center; }
+.takvim .disay { background: #faf8f8; color: #b5b0b0; }
+.takvim .gunno { font-weight: 600; margin-bottom: 4px; }
+.takvim .olay { display: block; margin-bottom: 2px; }
+
+.giris { max-width: 320px; margin: 12vh auto; background: var(--yuzey);
+         border: 1px solid var(--cizgi); padding: 22px; }
+.giris input, .giris button { width: 100%; margin-top: 8px; }

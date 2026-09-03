@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Av. Asistan — UYAP Senkron",
+  "version": "0.1.0",
+  "description": "UYAP Vatandaş Portalı'ndaki KENDİ dosyalarınızı, SİZ başlattığınızda panelinize aktarır. Otomatik/arka plan tarama yok.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://vatandas.uyap.gov.tr/*",
+    "https://*.supabase.co/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Av. Asistan — UYAP Senkron"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://vatandas.uyap.gov.tr/*"],
+      "js": ["uyap.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://vatandas.uyap.gov.tr/*"],
+      "js": ["kesif.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ]
+}

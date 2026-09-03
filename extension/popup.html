@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 340px; margin: 0; padding: 14px; font: 14px -apple-system, system-ui, sans-serif;
+             color: #201e1d; background: #f3f2f2; }
+      h1 { font-size: 15px; margin: 0 0 4px; }
+      p.alt { margin: 0 0 12px; font-size: 12px; color: #605d5d; line-height: 1.45; }
+      label { display: block; font-size: 12px; color: #605d5d; margin: 10px 0 3px; }
+      input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #d7d3d3;
+              background: #f8f4f4; font-size: 13px; }
+      button { width: 100%; margin-top: 10px; padding: 10px; border: 0; background: #ec3013;
+               color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+      button.ikincil { background: #201e1d; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      #durum { margin-top: 10px; font-size: 12px; white-space: pre-wrap; line-height: 1.5; }
+      .ok { color: #1a6b34; } .hata { color: #ae1800; }
+      details { margin-top: 14px; border-top: 1px solid #ddd8d8; padding-top: 10px; }
+      summary { font-size: 12px; color: #605d5d; cursor: pointer; }
+      .satir { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+      .satir input { width: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>Av. Asistan — UYAP Senkron</h1>
+    <p class="alt">
+      Önce <b>vatandas.uyap.gov.tr</b>'ye kendi bilgilerinizle girin ve
+      <b>Dosyalarım</b> sayfasını açın, sonra buradan senkronu başlatın.
+    </p>
+
+    <label for="token">Eklenti Token'ı</label>
+    <input id="token" type="password" placeholder="Panelden aldığınız token" autocomplete="off" />
+
+    <label for="supabaseUrl">Sunucu adresi</label>
+    <input id="supabaseUrl" type="text" placeholder="https://xxxx.supabase.co" />
+
+    <label for="supabaseAnon">Genel anahtar (anon key)</label>
+    <input id="supabaseAnon" type="password" placeholder="eyJ..." autocomplete="off" />
+
+    <button id="kaydet" class="ikincil">Kaydet ve Bağlan</button>
+    <button id="senkron">Senkronu başlat</button>
+
+    <div id="durum"></div>
+
+    <details>
+      <summary>Sorun giderme — keşif modu</summary>
+      <p class="alt">
+        UYAP uçları değişirse senkron durur. Keşif modunu açıp portalda gezinin,
+        kaydı indirip geliştiriciye iletin. Kayıtta çerez/şifre <b>yoktur</b> ve
+        tarayıcı kapanınca silinir.
+      </p>
+      <div class="satir">
+        <input id="kesifAcik" type="checkbox" />
+        <label for="kesifAcik" style="margin:0">Keşif modu açık</label>
+      </div>
+      <button id="kesifIndir" class="ikincil">Keşif kaydını indir</button>
+    </details>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
