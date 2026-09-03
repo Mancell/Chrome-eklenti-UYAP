@@ -1,43 +1,150 @@
 // İçerik betiği (ISOLATED world) — vatandas.uyap.gov.tr sayfasında çalışır.
 //
 // Buradan yapılan fetch'ler AYNI KÖKEN olduğu için kullanıcının ZATEN AÇIK olan
-// oturum çerezini taşır. Kullanıcı adı/şifre HİÇBİR YERDE tutulmaz, okunmaz,
+// oturum çerezini taşır. Kullanıcı adı/şifre hiçbir yerde tutulmaz, okunmaz,
 // gönderilmez — eklenti oturum açmaz, açık oturumu kullanır.
 //
-// ┌──────────────────────────────────────────────────────────────────────────┐
-// │ FAZ 0 — KEŞİF GEREKİYOR                                                  │
-// │ Aşağıdaki `UCLAR` boş: vatandaş portalının iç uçları herkese açık        │
-// │ dokümante değil ve UYDURMA ENDPOINT YAZILMADI. Doldurmak için:           │
-// │   1. Popup → "Keşif modu"nu aç.                                          │
-// │   2. vatandas.uyap.gov.tr'ye gir; Dosyalarım → bir dosya → safahat →     │
-// │      duruşmalar → bir evrak indir → e-tebligat.                          │
-// │   3. Popup → "Keşif kaydını indir" (JSON).                               │
-// │   4. Kaydı `docs/uyap-uclari.md`'ye işle, `UCLAR`'ı doldur.              │
-// └──────────────────────────────────────────────────────────────────────────┘
+// UÇLAR ÖLÇÜLDÜ, tahmin değil: varlığı `nosessionobject` sondasıyla doğrulandı
+// (oturumsuz POST'ta var olan uç `<root><error>nosessionobject</error></root>`,
+// olmayan uç BOŞ gövde döndürüyor; HTTP kodu ikisinde de 200). Yöntem, olmayan
+// uçların listesi ve avukat portalı karşılıkları: docs/uyap-uclari.md
 //
-// KIRMIZI ÇİZGİ: bot tespitini atlatmak için insan-taklidi gecikme/desen YOK.
-// background.js'teki sabit 800 ms yalnız nezakettir.
+// YANITLAR XML. Portal jQuery 2.1.3 + Metronic tabanlı JSP; JSON dönmüyor.
+// Bu yüzden ayrıştırma katmanı DOMParser üzerinden.
 
-const KESIF_HATASI =
-  'UYAP uç keşfi tamamlanmadı. Popup’tan "Keşif modu"nu açıp portalda gezinin, ' +
-  'kaydı indirip extension/uyap.js içindeki UCLAR’ı doldurun (bkz. docs/uyap-uclari.md).';
+const TABAN = 'https://vatandas.uyap.gov.tr';
 
-// Faz 0 çıktısı buraya. Her biri: { url, metod, govde(fn|null) }
 const UCLAR = {
+  // ⛔ TEK BİLİNMEYEN: `dosyaId` üreten giriş noktası. Oturum gerektirdiği için
+  // oturumsuz sondayla bulunamadı; keşif modu bulacak. Denenip BULUNAMAYAN
+  // isimler docs/uyap-uclari.md'de — aynılarını tekrar denemeyin.
   dosyaListesi: null,
-  safahat: null,
-  durusmalar: null,
-  evrakListesi: null,
-  evrakIndir: null,
-  tebligatlar: null,
+  durusmalar: null,      // vatandaş karşılığı bilinmiyor
+  evrakListesi: null,    // list_dosya_evraklar.ajx avukat'a özgü
+
+  // ✔ Doğrulanmış
+  safahat:     { yol: '/dosya_safahat_bilgileri_brd.ajx', metod: 'POST' },
+  taraflar:    { yol: '/dosya_taraf_bilgileri_brd.ajx', metod: 'POST' },
+  tahsilat:    { yol: '/dosya_tahsilat_reddiyat_bilgileri_brd.ajx', metod: 'POST' },
+  evrakTipi:   { yol: '/get_evrak_mimeType_brd.ajx', metod: 'POST' },
+  evrakIndir:  { yol: '/download_document_brd.uyap', metod: 'GET' },
 };
+
+const EKSIK_ADLAR = {
+  dosyaListesi: 'Dosyalarım listesi',
+  durusmalar: 'Duruşma listesi',
+  evrakListesi: 'Evrak listesi',
+};
+
+/** Keşif bekleyen uç için NET hata — "keşif tamamlanmadı" gibi belirsiz değil. */
+function eksikUc(ad) {
+  return new Error(
+    `${EKSIK_ADLAR[ad] ?? ad} ucu henüz bilinmiyor. ` +
+    'Eklenti popup’ından "Keşif modu"nu açıp UYAP sekmesini yenileyin, ' +
+    'Dosyalarım sayfasına girin, sonra "Kaydı kopyala" ile kaydı geliştiriciye iletin.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// XML katmanı
+// ---------------------------------------------------------------------------
+
+/** UYAP hata kodlarını kullanıcının anlayacağı cümleye çevirir. */
+function hataMetni(kod) {
+  if (kod === 'nosessionobject') {
+    return 'UYAP oturumunuz düşmüş. Sayfayı yenileyip tekrar giriş yapın.';
+  }
+  return `UYAP hatası: ${kod}`;
+}
+
+/**
+ * XML metnini Document'a çevirir; `<root><error>…</error></root>` gelirse
+ * fırlatır. Boş gövde = uç yok (bkz. nosessionobject sondası).
+ */
+function xmlAyristir(metin) {
+  if (!metin || !metin.trim()) {
+    throw new Error('UYAP boş yanıt döndürdü — bu uç bu portalda yok olabilir.');
+  }
+  const belge = new DOMParser().parseFromString(metin, 'text/xml');
+  // getElementsByTagName / childNodes bilinçli tercih: querySelector ve
+  // `children` her XML DOM'unda yok (test ortamı dahil), bunlar her yerde var.
+  if (belge.getElementsByTagName('parsererror')[0]) {
+    throw new Error('UYAP yanıtı okunamadı (geçersiz XML).');
+  }
+  const hata = belge.getElementsByTagName('error')[0];
+  if (hata) throw new Error(hataMetni((hata.textContent || '').trim()));
+  return belge;
+}
+
+/**
+ * XML'den satır listesi çıkarır — UYAP'ın kesin şeması bilinmediği için
+ * GENEL çalışır: en kalabalık tekrarlanan eleman kümesini "satırlar" kabul
+ * eder ve her satırın alt eleman adlarını alan adı yapar.
+ *
+ * Böylece dosya listesi ucu keşfedildiğinde ayrıştırma kodu yeniden yazılmak
+ * zorunda kalmıyor; yalnız alan eşlemesi yazılıyor.
+ */
+/** Eleman tipindeki alt düğümler (nodeType 1). `children` her DOM'da yok. */
+function cocuklar(el) {
+  const c = [];
+  for (const d of el.childNodes || []) if (d.nodeType === 1) c.push(d);
+  return c;
+}
+
+function xmlSatirlar(belge) {
+  const kok = belge.documentElement;
+  if (!kok) return [];
+
+  // Aynı etiket adına sahip kardeşleri grupla; en kalabalık grup satır kümesi.
+  const gruplar = new Map();
+  const gez = (el) => {
+    const cs = cocuklar(el);
+    const sayac = new Map();
+    for (const c of cs) sayac.set(c.tagName, (sayac.get(c.tagName) || 0) + 1);
+    for (const [ad, n] of sayac) {
+      if (n > 1) {
+        const mevcut = gruplar.get(ad);
+        if (!mevcut || n > mevcut.n) gruplar.set(ad, { n, ebeveyn: el });
+      }
+    }
+    for (const c of cs) gez(c);
+  };
+  gez(kok);
+
+  let enIyi = null;
+  for (const [ad, g] of gruplar) if (!enIyi || g.n > enIyi.g.n) enIyi = { ad, g };
+  if (!enIyi) return [];
+
+  return cocuklar(enIyi.g.ebeveyn)
+    .filter((c) => c.tagName === enIyi.ad)
+    .map((satir) => {
+      const o = {};
+      const alanlar = cocuklar(satir);
+      if (!alanlar.length) return { deger: (satir.textContent || '').trim() };
+      for (const a of alanlar) o[a.tagName] = (a.textContent || '').trim();
+      for (const nit of satir.attributes || []) o[nit.name] = nit.value;
+      return o;
+    });
+}
+
+async function cagir(ucAdi, govde) {
+  const uc = UCLAR[ucAdi];
+  if (!uc) throw eksikUc(ucAdi);
+  const y = await fetch(TABAN + uc.yol, {
+    method: uc.metod,
+    credentials: 'include',              // kullanıcının KENDİ oturumu
+    headers: uc.metod === 'POST' ? { 'Content-Type': 'application/json' } : {},
+    body: uc.metod === 'POST' ? JSON.stringify(govde || {}) : undefined,
+  });
+  if (!y.ok) throw new Error(`UYAP ${y.status} — oturumunuz düşmüş olabilir.`);
+  return xmlSatirlar(xmlAyristir(await y.text()));
+}
 
 // ---------------------------------------------------------------------------
 // Yardımcılar
 // ---------------------------------------------------------------------------
 
-/** UYAP satır başına kimlik vermezse ref'i içerikten türetiriz — senkron
- *  idempotent kalsın diye DETERMİNİSTİK olmalı. Kripto değil, sadece kararlı. */
+/** Deterministik ref — senkron idempotent kalsın. Kripto değil, kararlı. */
 function ref(...parcalar) {
   const s = parcalar.map((p) => String(p ?? '').trim()).join('|');
   let h = 0x811c9dc5;
@@ -48,8 +155,7 @@ function ref(...parcalar) {
   return h.toString(16).padStart(8, '0');
 }
 
-/** "12.03.2024" / "2024-03-12" / "" → ISO ya da null. RPC de bozuk tarihe
- *  dayanıklı; burada temizlemek yalnız veriyi düzgün tutmak için. */
+/** "12.03.2024" / "2024-03-12" / "" → ISO ya da null. */
 function tarih(d) {
   const s = String(d ?? '').trim();
   if (!s) return null;
@@ -59,71 +165,73 @@ function tarih(d) {
   return iso ? iso[0] : null;
 }
 
-async function json(uc, ...arg) {
-  if (!uc) throw new Error(KESIF_HATASI);
-  const y = await fetch(uc.url, {
-    method: uc.metod || 'GET',
-    credentials: 'include',            // kullanıcının KENDİ oturumu
-    headers: uc.metod === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {},
-    body: uc.govde ? uc.govde(...arg) : undefined,
-  });
-  if (!y.ok) throw new Error(`UYAP ${y.status} — oturumunuz düşmüş olabilir, sayfayı yenileyip tekrar girin.`);
-  return y.json();
+/** Satırdan ilk dolu alanı seçer — UYAP alan adları uçtan uca değişebiliyor. */
+function alan(satir, ...adaylar) {
+  for (const a of adaylar) {
+    for (const k of Object.keys(satir)) {
+      if (k.toLowerCase() === a.toLowerCase() && String(satir[k]).trim()) return satir[k];
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
-// Veri çekiciler — Faz 0'dan sonra gövdeleri dolar.
-// Her biri RPC'nin beklediği şekilde NORMALİZE edilmiş dizi döndürür.
+// Veri çekiciler
 // ---------------------------------------------------------------------------
 
-/** → [{ uyap_ref, dosya_no, birim, yargi_turu, dosya_turu, taraflar, acilis_tarihi, durum }] */
 async function dosyalar() {
-  const veri = await json(UCLAR.dosyaListesi);
-  // ÖRNEK (keşiften sonra alan adları gerçek yanıta göre düzeltilecek):
-  // return veri.data.map((k) => ({
-  //   uyap_ref: String(k.dosyaId), dosya_no: k.dosyaNo, birim: k.birimAdi,
-  //   yargi_turu: k.yargiTuru, dosya_turu: k.dosyaTuru, taraflar: k.taraflar,
-  //   acilis_tarihi: tarih(k.acilisTarihi), durum: k.dosyaDurumu,
-  // }));
-  void veri;
-  throw new Error(KESIF_HATASI);
+  if (!UCLAR.dosyaListesi) throw eksikUc('dosyaListesi');
+  return (await cagir('dosyaListesi')).map((s) => ({
+    uyap_ref: String(alan(s, 'dosyaId', 'dosyaNo', 'id') ?? ref(JSON.stringify(s))),
+    dosya_no: alan(s, 'dosyaNo', 'esasNo'),
+    birim: alan(s, 'birimAdi', 'birim', 'mahkeme'),
+    yargi_turu: alan(s, 'yargiTuru', 'yargiTuruAdi'),
+    dosya_turu: alan(s, 'dosyaTuru', 'dosyaTuruAdi'),
+    taraflar: alan(s, 'taraflar', 'tarafAdi'),
+    acilis_tarihi: tarih(alan(s, 'acilisTarihi', 'dosyaAcilisTarihi')),
+    durum: alan(s, 'dosyaDurumu', 'durum'),
+  }));
 }
 
-/** → [{ uyap_ref, dosya_ref, tarih, islem, aciklama }] */
 async function safahat(dosyaRef) {
-  const veri = await json(UCLAR.safahat, dosyaRef);
-  // UYAP safahat satırları genelde ID'siz → ref içerikten türetilir.
-  // return veri.data.map((k) => ({
-  //   uyap_ref: ref(dosyaRef, k.tarih, k.islem), dosya_ref: dosyaRef,
-  //   tarih: tarih(k.tarih), islem: k.islem, aciklama: k.aciklama,
-  // }));
-  void veri; void ref;
-  throw new Error(KESIF_HATASI);
+  return (await cagir('safahat', { dosyaId: dosyaRef })).map((s) => ({
+    uyap_ref: ref(dosyaRef, alan(s, 'tarih', 'islemTarihi'), alan(s, 'islem', 'aciklama')),
+    dosya_ref: dosyaRef,
+    tarih: tarih(alan(s, 'tarih', 'islemTarihi')),
+    islem: alan(s, 'islem', 'islemTuru', 'aciklama'),
+    aciklama: alan(s, 'aciklama', 'detay'),
+  }));
 }
 
-/** → [{ uyap_ref, dosya_ref, tarih, saat, salon, tur, durum }] */
 async function durusmalar(dosyaRef) {
-  const veri = await json(UCLAR.durusmalar, dosyaRef);
-  void veri;
-  throw new Error(KESIF_HATASI);
+  if (!UCLAR.durusmalar) throw eksikUc('durusmalar');
+  return (await cagir('durusmalar', { dosyaId: dosyaRef })).map((s) => ({
+    uyap_ref: ref(dosyaRef, alan(s, 'tarih', 'durusmaTarihi'), alan(s, 'saat')),
+    dosya_ref: dosyaRef,
+    tarih: tarih(alan(s, 'tarih', 'durusmaTarihi')),
+    saat: alan(s, 'saat', 'durusmaSaati'),
+    salon: alan(s, 'salon', 'salonAdi'),
+    tur: alan(s, 'tur', 'durusmaTuru'),
+    durum: alan(s, 'durum'),
+  }));
 }
 
-/** → [{ uyap_ref, dosya_ref, evrak_tipi, evrak_tarihi, gonderen, uyap_link }] */
 async function evrakListesi(dosyaRef) {
-  const veri = await json(UCLAR.evrakListesi, dosyaRef);
-  void veri;
-  throw new Error(KESIF_HATASI);
+  if (!UCLAR.evrakListesi) throw eksikUc('evrakListesi');
+  return (await cagir('evrakListesi', { dosyaId: dosyaRef })).map((s) => ({
+    uyap_ref: String(alan(s, 'evrakId', 'id') ?? ref(dosyaRef, JSON.stringify(s))),
+    dosya_ref: dosyaRef,
+    evrak_tipi: alan(s, 'evrakTipi', 'turAdi', 'evrakTuru'),
+    evrak_tarihi: tarih(alan(s, 'evrakTarihi', 'tarih')),
+    gonderen: alan(s, 'gonderen', 'gonderenAdi'),
+    uyap_link: `${TABAN}/view_document_brd.uyap?evrakId=${encodeURIComponent(alan(s, 'evrakId', 'id') ?? '')}&dosyaId=${encodeURIComponent(dosyaRef)}`,
+  }));
 }
 
-/** Tek evrakın baytı → base64. Metin ÇIKARILMAZ burada (background yapar). */
-async function evrakIndir(evrakRef) {
-  if (!UCLAR.evrakIndir) throw new Error(KESIF_HATASI);
-  const uc = UCLAR.evrakIndir;
-  const y = await fetch(uc.url, {
-    method: uc.metod || 'GET',
-    credentials: 'include',
-    body: uc.govde ? uc.govde(evrakRef) : undefined,
-  });
+/** Evrak baytı → base64. Metin ÇIKARILMAZ burada (background yapar). */
+async function evrakIndir(evrakRef, dosyaRef) {
+  const q = new URLSearchParams({ evrakId: evrakRef, dosyaId: dosyaRef ?? '' });
+  const y = await fetch(`${TABAN}${UCLAR.evrakIndir.yol}?${q}`, { credentials: 'include' });
   if (!y.ok) throw new Error(`Evrak indirilemedi (UYAP ${y.status}).`);
   const bayt = new Uint8Array(await y.arrayBuffer());
   let ikili = '';
@@ -131,36 +239,45 @@ async function evrakIndir(evrakRef) {
   return btoa(ikili);
 }
 
-/** → [{ uyap_ref, dosya_ref, konu, gonderen, teblig_tarihi, sure_gun, durum }] */
-async function tebligatlar() {
-  const veri = await json(UCLAR.tebligatlar);
-  void veri;
-  throw new Error(KESIF_HATASI);
+/**
+ * Uç sağlık kontrolü — `nosessionobject` imzasını kullanır. Sessiz çökme yerine
+ * "hangi uç erişilebilir" raporu; popup bunu gösteriyor.
+ */
+async function ucSagligi() {
+  const rapor = {};
+  for (const [ad, uc] of Object.entries(UCLAR)) {
+    if (!uc) { rapor[ad] = 'bilinmiyor (keşif bekliyor)'; continue; }
+    try {
+      const y = await fetch(TABAN + uc.yol, {
+        method: uc.metod,
+        credentials: 'include',
+        headers: uc.metod === 'POST' ? { 'Content-Type': 'application/json' } : {},
+        body: uc.metod === 'POST' ? '{}' : undefined,
+      });
+      const metin = (await y.text()).trim();
+      rapor[ad] = !metin ? 'uç yok'
+        : metin.includes('nosessionobject') ? 'var, oturum yok'
+        : 'var, yanıt verdi';
+    } catch (e) {
+      rapor[ad] = 'ulaşılamadı: ' + e.message;
+    }
+  }
+  return rapor;
 }
 
 // ---------------------------------------------------------------------------
-// Keşif hasadı
-//
-// MAIN world'deki kesif.js `chrome.*` göremiyor; kayıtları postMessage ile
-// veriyor. ESKİ TASARIM buradan MAIN world'e "keşif açık mı?" diye cevap
-// veriyordu — ama kesif.js `document_start`'ta soruyor, bu betik
-// `document_idle`'da yüklüyor: soru cevapsız kalıyor ve HİÇBİR ŞEY
-// KAYDEDİLMİYORDU. Artık bayrak yok: kesif.js yalnız keşif açıkken sayfaya
-// kaydediliyor (popup.js → chrome.scripting), varlığı bayrağın kendisi.
+// Keşif hasadı — MAIN world'deki kesif.js tamponunu ister.
 // ---------------------------------------------------------------------------
-
-/** MAIN world'den kayıt tamponunu ister. kesif.js kurulu değilse null döner. */
 function kesifHasadi(zamanAsimiMs = 1500) {
   return new Promise((coz) => {
     const dinleyici = (e) => {
       if (e.source !== window || e.data?.__uyapKesif !== 'kayitlar') return;
       window.removeEventListener('message', dinleyici);
       clearTimeout(sayac);
-      coz({ kayitlar: e.data.kayitlar, kaynaklar: e.data.kaynaklar, sinir: e.data.sinir });
+      coz({ kayitlar: e.data.kayitlar, kaynaklar: e.data.kaynaklar, ajxIstekleri: e.data.ajxIstekleri });
     };
     window.addEventListener('message', dinleyici);
-    // Zaman aşımı ŞART: keşif modu kapalıysa kesif.js sayfada yok ve cevap
-    // asla gelmez — popup sonsuza dek beklemesin.
+    // Zaman aşımı ŞART: keşif kapalıysa kesif.js sayfada yok, cevap hiç gelmez.
     const sayac = setTimeout(() => {
       window.removeEventListener('message', dinleyici);
       coz(null);
@@ -170,7 +287,7 @@ function kesifHasadi(zamanAsimiMs = 1500) {
 }
 
 // ---------------------------------------------------------------------------
-// Arka plandan gelen istekler
+// Arka planla iletişim
 // ---------------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
   (async () => {
@@ -180,8 +297,8 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'safahat':       return yanitla({ veri: await safahat(istek.dosyaRef) });
         case 'durusmalar':    return yanitla({ veri: await durusmalar(istek.dosyaRef) });
         case 'evrak-listesi': return yanitla({ veri: await evrakListesi(istek.dosyaRef) });
-        case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef) });
-        case 'tebligatlar':   return yanitla({ veri: await tebligatlar() });
+        case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.dosyaRef) });
+        case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
         case 'kesif-al':      return yanitla({ kesif: await kesifHasadi() });
         default:              return yanitla({ hata: 'Bilinmeyen istek.' });
       }
@@ -191,3 +308,8 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
   })();
   return true;   // async yanıt
 });
+
+// Sayfa hazır → arka plana haber ver. Senkronu O başlatıyor (token varsa ve
+// soğuma süresi geçtiyse). Kullanıcı buton aramıyor; otomatik ama YALNIZ
+// kullanıcı UYAP'tayken — arka planda tarama yok, chrome.alarms yok.
+chrome.runtime.sendMessage({ tip: 'sayfa-hazir', url: location.href }).catch(() => {});

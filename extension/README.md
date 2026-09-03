@@ -8,8 +8,9 @@ klasör olduğu gibi yüklenir.
 
 - **Şifre okunmaz, tutulmaz, gönderilmez.** Eklenti UYAP'a giriş yapmaz;
   kullanıcının zaten açık oturumunu (aynı köken çerezi) kullanır.
-- **Otomatik/arka plan tarama yok.** Alarm yok, sayfa açılınca çekme yok.
-  Senkron yalnız popup'taki butonla başlar.
+- **Arka plan taraması yok.** `chrome.alarms` yok. Senkron yalnız kullanıcı
+  UYAP sayfasındayken, o sayfa açıkken çalışır ve 5 dakika soğuma uygular.
+  Kullanıcı açısından otomatik, ama tarayıcı UYAP'ta değilken hiçbir şey olmaz.
 - **Bot tespiti atlatma yok.** `background.js`'teki sabit 800 ms yalnız nezaket
   içindir — UYAP'ı yormamak için, gizlenmek için değil.
 
@@ -19,8 +20,8 @@ klasör olduğu gibi yüklenir.
    `extension/` klasörü.
 2. Panelde **Kurulum** sayfasından token üretin.
 3. Eklenti popup'ına **yalnız token**'ı yapıştırıp **Bağlan**.
-4. `vatandas.uyap.gov.tr`'ye girin, **Dosyalarım**'a gidin,
-   **Senkronu başlat**.
+4. `vatandas.uyap.gov.tr`'ye girin, **Dosyalarım**'a gidin. Senkron
+   **kendiliğinden** başlar — basılacak buton yok.
 
 Sunucu adresi ve genel anahtar kullanıcıya sorulmuyor: `ayarlar.js`'e gömülü.
 Başka bir Supabase projesine bağlanacaksanız oradaki iki sabiti ve
@@ -30,7 +31,7 @@ Başka bir Supabase projesine bağlanacaksanız oradaki iki sabiti ve
 
 | Dosya | İş |
 |---|---|
-| `uyap.js` | İçerik betiği (ISOLATED). UYAP'tan veri çeker. **`UCLAR` boş — bkz. `docs/uyap-uclari.md`** |
+| `uyap.js` | İçerik betiği (ISOLATED). UYAP'tan veri çeker + XML ayrıştırma. Altı uç **ölçüldü**; dosya listesi ucu hâlâ bilinmiyor — bkz. `docs/uyap-uclari.md` |
 | `kesif.js` | MAIN world `fetch`/`XHR` kaydedici. **Statik değil**: yalnız keşif açıkken `chrome.scripting` ile kaydediliyor — betiğin varlığı bayrağın kendisi |
 | `evrak.js` | Evrak baytı → düz metin. UDF (ZIP+CDATA) çalışıyor; PDF bu turda çıkarılmıyor |
 | `background.js` | Orkestrasyon + tek `eklenti_senkron` RPC çağrısı |
@@ -40,16 +41,19 @@ Başka bir Supabase projesine bağlanacaksanız oradaki iki sabiti ve
 ## Test
 
 ```bash
-node --test extension/evrak.test.mjs extension/kesif.test.mjs
+npm test
 ```
 
-Tarayıcı gerekmez, bağımlılık yok.
+Tarayıcı gerekmez. Tek test bağımlılığı `@xmldom/xmldom` (Node'da `DOMParser`
+yok); eklentinin kendisi bağımlılıksız.
 
 - `evrak.test.mjs` — gerçek bir UDF (zip + deflate) üretip metni geri çıkarır;
   bozuk baytta fırlatmadığını doğrular.
 - `kesif.test.mjs` — `node:vm` içinde sahte bir sayfa kurup kaydedicinin
   isteği gerçekten yakaladığını doğrular. Bu bileşen iki kez SESSİZCE çöktü
   (MAIN/ISOLATED el sıkışma yarışı); test tam o şeyi ölçüyor.
+- `uyap.test.mjs` — XML katmanı: `nosessionobject` okunur cümleye çevriliyor
+  mu, genel satır ayrıştırıcı çalışıyor mu, ölçülmüş uçlar yerinde mi.
 
 ## Bilinen tavan
 

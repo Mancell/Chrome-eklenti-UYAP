@@ -28,7 +28,10 @@
   const ORNEK = 3;     // yanıttan saklanacak örnek satır sayısı
 
   const kayitlar = [];
-  const kaynaklar = [];   // PerformanceObserver teşhisi
+  const kaynaklar = [];    // PerformanceObserver teşhisi
+  // Aranan tek şey bir `.ajx` ucu (Dosyalarım listesi). Ayrı listede toplanıyor
+  // ki 200 kaydın içinde kaybolmasın — bkz. docs/uyap-uclari.md
+  const ajxIstekleri = [];
 
   /** Yanıttan yalnız ŞEKİL çıkarır — kişisel veriyi bütün hâlde saklamamak için. */
   function sekil(v, derinlik = 0) {
@@ -54,13 +57,15 @@
     } catch {
       yanit = { tip: 'metin', uzunluk: (yanitMetni || '').length, bas: (yanitMetni || '').slice(0, 200) };
     }
-    kayitlar.push({
+    const kayit = {
       zaman: new Date().toISOString(),
       url: String(url),
       metod: metod || 'GET',
       govde: typeof govde === 'string' ? govde.slice(0, 1000) : govde ? '[gövde metin değil]' : '',
       yanit,
-    });
+    };
+    kayitlar.push(kayit);
+    if (/\.ajx(\?|$)/.test(String(url))) ajxIstekleri.push(kayit);
   }
 
   // --- fetch kancası -------------------------------------------------------
@@ -131,7 +136,7 @@
     if (e.source !== window) return;
     if (e.data?.__uyapKesif === 'ver') {
       window.postMessage(
-        { __uyapKesif: 'kayitlar', kayitlar, kaynaklar, sinir: SINIR },
+        { __uyapKesif: 'kayitlar', kayitlar, kaynaklar, ajxIstekleri, sinir: SINIR },
         '*',
       );
     }

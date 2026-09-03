@@ -46,12 +46,6 @@ $('kaydet').addEventListener('click', async () => {
   chrome.runtime.sendMessage({ tip: 'baglan' });
 });
 
-$('senkron').addEventListener('click', () => {
-  $('senkron').disabled = true;
-  durum('Senkron başladı…');
-  chrome.runtime.sendMessage({ tip: 'senkron-basla' });
-});
-
 // ---------------------------------------------------------------------------
 // Keşif modu
 //
@@ -125,16 +119,35 @@ async function sayacYenile() {
   if (hata) { el.textContent = hata; return; }
   const n = kesif.kayitlar.length;
   const k = kesif.kaynaklar.length;
+  const a = (kesif.ajxIstekleri || []).length;
   el.textContent = n
-    ? `${n} istek kaydedildi (${k} ağ girdisi görüldü).`
+    // Aranan şey `.ajx` ucu; sayacın asıl anlamlı kısmı o.
+    ? `${n} istek kaydedildi — bunlardan ${a} tanesi .ajx (aradığımız bu).`
     : k
-      ? `Henüz ajax isteği yok, ama ${k} ağ girdisi görüldü — portalda gezinin.`
+      ? `Henüz ajax yok, ${k} ağ girdisi görüldü — Dosyalarım sayfasına girin.`
       : 'Hiç ağ girdisi yok. Sekmeyi yenilediniz mi?';
 }
 
 function kesifJson(kesif) {
   return JSON.stringify(kesif, null, 2);
 }
+
+/**
+ * Uç sağlığı — `nosessionobject` imzasını kullanır (bkz. docs/uyap-uclari.md).
+ * Sessiz çökme yerine "hangi uç erişilebilir" raporu.
+ */
+$('ucSagligi').addEventListener('click', async () => {
+  const [sekme] = await chrome.tabs.query({ url: UYAP_ESLESME });
+  if (!sekme) return durum('Açık bir UYAP sekmesi yok.', 'hata');
+  durum('Uçlar sınanıyor…');
+  try {
+    const { rapor, hata } = await chrome.tabs.sendMessage(sekme.id, { tip: 'uc-sagligi' });
+    if (hata) return durum(hata, 'hata');
+    durum(Object.entries(rapor).map(([k, v]) => `  ${k}: ${v}`).join('\n'));
+  } catch {
+    durum('UYAP sekmesine ulaşılamadı. Sayfayı yenileyip tekrar deneyin.', 'hata');
+  }
+});
 
 $('kesifKopyala').addEventListener('click', async () => {
   const { kesif, hata } = await kesifAl();
@@ -163,19 +176,16 @@ $('kesifIndir').addEventListener('click', async () => {
 function gosterDurum(msg) {
   if (msg.tip === 'ilerleme') {
     durum(msg.mesaj);
-    $('senkron').disabled = true;      // senkron sürüyor
   } else if (msg.tip === 'baglandi') {
-    durum('Bağlandı. Artık senkronu başlatabilirsiniz.', 'ok');
+    durum('Bağlandı. UYAP’ta Dosyalarım sayfasına girin — senkron kendiliğinden başlar.', 'ok');
   } else if (msg.tip === 'bitti') {
     const s = msg.sonuc || {};
     durum(
       'Senkron bitti.\n' +
         Object.entries(s).map(([k, v]) => `  ${k}: ${v}`).join('\n'),
       'ok');
-    $('senkron').disabled = false;
   } else if (msg.tip === 'hata') {
     durum('Hata: ' + msg.mesaj, 'hata');
-    $('senkron').disabled = false;
   }
 }
 

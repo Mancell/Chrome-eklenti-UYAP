@@ -150,7 +150,7 @@ async function senkronCalistir() {
   for (const e of paket.evraklar) {
     if (indirilen >= EVRAK_TAVANI) break;
     try {
-      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e.uyap_ref });
+      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e.uyap_ref, dosyaRef: e.dosya_ref });
       const ikili = atob(base64);
       const bayt = new Uint8Array(ikili.length);
       for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i);
@@ -175,7 +175,38 @@ async function senkronCalistir() {
   return await rpc(cfg, paket);
 }
 
+// Otomatik senkron soğuması. Kullanıcı UYAP içinde sayfa değiştirdikçe
+// `sayfa-hazir` tekrar geliyor; her seferinde baştan senkron etmek UYAP'ı
+// gereksiz yorar. `storage.session` tarayıcı kapanınca sıfırlanıyor.
+const SOGUMA_MS = 5 * 60 * 1000;
+let _suruyor = false;
+
+async function otomatikSenkron() {
+  if (_suruyor) return;
+  const { token } = await chrome.storage.local.get('token');
+  if (!token) return;                       // henüz bağlanmamış; sessiz geç
+  const { sonSenkron = 0 } = await chrome.storage.session.get('sonSenkron');
+  if (Date.now() - sonSenkron < SOGUMA_MS) return;
+
+  _suruyor = true;
+  await chrome.storage.session.set({ sonSenkron: Date.now() });
+  kalbiBaslat();
+  try {
+    bildir({ tip: 'bitti', sonuc: await senkronCalistir() });
+  } catch (e) {
+    bildir({ tip: 'hata', mesaj: e.message });
+  } finally {
+    kalbiDurdur();
+    _suruyor = false;
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
+  // Kullanıcı UYAP sayfasını açtı → senkron KENDİLİĞİNDEN başlıyor. Buton yok.
+  // chrome.alarms da yok: yalnız kullanıcı UYAP'tayken çalışıyor, arka planda
+  // tarama yapılmıyor — savunulabilir olan bu.
+  if (msg.tip === 'sayfa-hazir') otomatikSenkron();
+
   if (msg.tip === 'senkron-basla') {
     kalbiBaslat();
     senkronCalistir()

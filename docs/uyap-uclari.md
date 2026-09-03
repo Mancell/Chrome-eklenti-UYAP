@@ -1,59 +1,111 @@
-# UYAP Vatandaş Portalı uçları — Faz 0 keşif çıktısı
+# UYAP uçları — ölçülmüş bulgular
 
-**Durum: BOŞ. Keşif yapılmadı.**
+Bu dosya **tahmin içermez.** Her satır ya portalın kendi JavaScript'inden ya da
+kimlik doğrulaması gerektirmeyen bir sondadan çıkarıldı. Yöntem aşağıda.
 
-`vatandas.uyap.gov.tr`'nin iç uçları herkese açık dokümante değil. Bu dosya
-doldurulana kadar `extension/uyap.js` içindeki `UCLAR` boş kalır ve senkron
-"UYAP uç keşfi tamamlanmadı" hatası verir. **Uydurma endpoint yazılmadı** —
-yanlış bir URL sessizce boş veri döndürüp senkronu "çalışıyor" gibi gösterir.
+## Yöntem: `nosessionobject` sondası
 
-## Keşif nasıl yapılır
+`vatandas.uyap.gov.tr` üzerinde bir ucun VAR olup olmadığı **giriş yapmadan**
+anlaşılabiliyor. Oturumsuz POST atınca:
 
-1. Eklentiyi yükleyin (bkz. `extension/README.md`).
-2. Popup → **Sorun giderme** → *Keşif modu açık*.
-3. **UYAP sekmesini yenileyin (F5).** Bu adım ZORUNLU: kaydedici
-   `chrome.scripting` ile dinamik kaydediliyor ve dinamik betikler yalnız YENİ
-   sayfa yüklemelerinde devreye girer. Yenilemezseniz hiçbir şey kaydedilmez.
-4. `vatandas.uyap.gov.tr`'ye kendi bilgilerinizle girin ve sırayla gezinin:
-   - Dosyalarım (liste)
-   - Bir dosyaya girin (safahat)
-   - Duruşma günleri
-   - Bir evrakı görüntüleyin/indirin
-   - e-Tebligat kutusu
-5. Gezinirken popup'taki **sayacın arttığını doğrulayın**. Artmıyorsa kayıt da
-   yoktur — sayfalarca gezinmeye devam etmeyin, sayaç ne diyorsa onu okuyun.
-6. Popup → **Kaydı kopyala** → JSON panoya gider (dosya indirme yarışına
-   girmeden doğrudan yapıştırılabilir).
-7. Aşağıdaki tabloyu doldurun, sonra `extension/uyap.js`'teki `UCLAR`'ı ve ilgili
-   `map` gövdelerini yazın.
+| Yanıt gövdesi | Anlamı |
+|---|---|
+| `<root><error>nosessionobject</error></root>` | **Uç var**, yalnız oturum yok |
+| boş (0 bayt) | **Uç yok** |
 
-Kayıtta çerez, şifre veya `Authorization` başlığı **yoktur**; yanıtlardan yalnız
-alan adları ve ilk 3 örnek satır saklanır, sayfanın belleğinde durur, sekme
-kapanınca silinir.
+HTTP kodu ikisinde de `200` — koda bakmak yanıltıcı, **gövdeye** bakmak gerekiyor.
+Uydurma bir yolla (`/olmayan-uc-kontrol_brd.ajx` → boş) kontrol edildi.
 
-## Sayaç boş çıkarsa — hangi sorun olduğunu ayırt etme
+```bash
+curl -s -X POST -H "Content-Type: application/json" -d '{}' \
+  https://vatandas.uyap.gov.tr/dosya_safahat_bilgileri_brd.ajx
+# <root><error>nosessionobject</error></root>   → var
+```
 
-Kayıt iki liste döndürür: `kayitlar` (yakalanan ajax) ve `kaynaklar`
-(PerformanceObserver'ın gördüğü TÜM ağ girdileri). Boş çıkınca:
+## Portal teknolojisi
 
-| `kayitlar` | `kaynaklar` | Anlamı |
+- jQuery 2.1.3 + Metronic teması, JSP sunucu tarafı.
+- İstekler `$.ajax` → **XMLHttpRequest**. Bu yüzden `extension/kesif.js`'in XHR
+  kancası doğru araç.
+- **Yanıtlar XML** (`<root>…</root>`), JSON DEĞİL. Bu, `uyap.js`'in ayrıştırma
+  katmanını belirliyor.
+- Uygulama kabuğu `/main/jsp/vatandas/index.jsp` → **302**, yani sayfa
+  modülleri oturumsuz okunamıyor. Genel katman (`/theme/js/application/`,
+  `/theme/js/uyapCore/`) ise herkese açık.
+
+## vatandas.uyap.gov.tr — VAR olan uçlar
+
+Taban: `https://vatandas.uyap.gov.tr`
+
+| Uç | Metod | İş |
 |---|---|---|
-| 0 | 0 | Kaydedici sayfada değil → sekme yenilenmedi |
-| 0 | `.ajx` istekleri var | Kanca yerleşimi yanlış → `kesif.js` düzeltilmeli |
-| 0 | yalnız `navigation` | **UYAP ajax kullanmıyor**, tam sayfa form POST → ajax kaydı yerine DOM kazıma gerekir |
+| `/dosya_safahat_bilgileri_brd.ajx` | POST | safahat (dosya hareketleri) |
+| `/dosya_taraf_bilgileri_brd.ajx` | POST | taraflar |
+| `/dosya_tahsilat_reddiyat_bilgileri_brd.ajx` | POST | tahsilat / reddiyat |
+| `/get_evrak_mimeType_brd.ajx` | POST | evrakın MIME tipi |
+| `/download_document_brd.uyap` | GET | evrak baytı |
+| `/view_document_brd.uyap` | GET | evrak görüntüleme |
 
-Üçüncü satır mimariyi değiştirir; `kaynaklar` tam bu ayrımı yapmak için var.
+## vatandas.uyap.gov.tr — OLMAYAN uçlar
 
-## Doldurulacak
+Bunlar **avukat portalına özgü**; vatandaşta boş gövde dönüyor:
 
-| Veri | URL | Metod | İstek gövdesi | Yanıttaki alanlar |
-|---|---|---|---|---|
-| Dosya listesi | | | | `uyap_ref` ← ?, `dosya_no` ← ?, `birim` ← ?, `yargi_turu` ← ?, `taraflar` ← ?, `acilis_tarihi` ← ?, `durum` ← ? |
-| Safahat | | | | `tarih` ← ?, `islem` ← ?, `aciklama` ← ? |
-| Duruşmalar | | | | `tarih` ← ?, `saat` ← ?, `salon` ← ?, `tur` ← ? |
-| Evrak listesi | | | | `uyap_ref` ← ?, `evrak_tipi` ← ?, `evrak_tarihi` ← ?, `gonderen` ← ?, `uyap_link` ← ? |
-| Evrak indirme | | | | (ikili yanıt — UDF veya PDF) |
-| e-Tebligat | | | | `konu` ← ?, `gonderen` ← ?, `teblig_tarihi` ← ?, `sure_gun` ← ? |
+`avukat_dosya_sorgula_cbs_brd.ajx`, `avukat_durusma_sorgula_brd.ajx`,
+`avukat_safahat_sorgula_brd.ajx`, `list_dosya_evraklar.ajx`,
+`dosyaAyrintiBilgileri_brd.ajx`, `getDocViewerParameters.ajx`,
+`search_phrase.ajx`, `search_phrase_detayli.ajx`,
+`getDosyaAramaParameters.ajx`, `mts_tebligat_safahat_list_brd.ajx`,
+`kisiIletisimBilgileriSorgula.ajx`, `get_kullanici_tum_bildirimleri.ajx`
+
+Denenip bulunamayan dosya-listesi adayları: `dosya_sorgula_brd.ajx`,
+`vatandas_dosya_sorgula_brd.ajx`, `vatandas_dosya_sorgula_cbs_brd.ajx`,
+`dosya_sorgula_cbs_brd.ajx`, `durusma_sorgula_brd.ajx`,
+`vatandas_durusma_sorgula_brd.ajx`, `safahat_sorgula_brd.ajx`
+
+## ⛔ Kalan tek bilinmeyen: Dosyalarım listesi ucu
+
+`dosyaId` üreten giriş noktası. Gerisi ona bağlanıyor, o yüzden **tek blokaj bu.**
+
+Bulmanın yolu (oturum gerekiyor, oturumsuz okunamadı):
+
+1. Eklenti popup → *Sorun giderme* → **Keşif modu açık**
+2. **UYAP sekmesini F5 ile yenile** (dinamik betik yalnız yeni yüklemede girer)
+3. UYAP'a gir → **Dosyalarım**
+4. Popup → **Kaydı kopyala** → `ajxIstekleri` listesindeki uç aranan şeydir
+
+Duruşma listesi ucu da aynı şekilde bulunacak (vatandaş karşılığı bilinmiyor).
+
+## Referans: avukat.uyap.gov.tr uçları
+
+Kullanıcı vatandaş portalında kalmayı seçti; bu liste ileride avukat portalı
+istenirse hazır olsun diye duruyor. Kaynak: Chrome Web Store'da yayınlanan
+"Av. Asistan — UYAP & e-Tebligat" eklentisinin paket kodu (herkese dağıtılan
+JS). Yalnızca **olgular** (URL ve alan adları) alındı, kod alınmadı.
+
+| Uç | Gövde |
+|---|---|
+| `POST /avukat_dosya_sorgula_cbs_brd.ajx` | filtre objesi |
+| `POST /search_phrase_detayli.ajx` | detaylı arama filtresi |
+| `POST /avukat_durusma_sorgula_brd.ajx` | filtre objesi |
+| `POST /avukat_safahat_sorgula_brd.ajx` | filtre objesi |
+| `POST /dosya_safahat_bilgileri_brd.ajx` | dosya bazlı safahat |
+| `POST /list_dosya_evraklar.ajx` | `{dosyaId, pageNumber}` |
+| `POST /dosyaAyrintiBilgileri_brd.ajx` | dosya detay |
+| `POST /dosya_taraf_bilgileri_brd.ajx` | taraflar |
+| `POST /getDocViewerParameters.ajx` | görüntüleyici parametreleri |
+| `POST /get_evrak_mimeType_brd.ajx` | MIME tipi |
+| `GET /download_document_brd.uyap` | evrak baytı (arraybuffer) |
+| `GET /view_document_brd.uyap` | `?evrakId=…&dosyaId=…` |
+| `POST /mts_tebligat_safahat_list_brd.ajx` | MTS tebligat safahatı |
+| `POST /get_kullanici_tum_bildirimleri.ajx` | `{baslangicTarihi, bitisTarihi}` |
+| `POST /yargiBirimleriSorgula_brd.ajx` | yargı birimi listesi |
+| `POST /avukatKisiselBilgileriSorgula.ajx` | avukat bilgileri |
+
+**e-Tebligat (UETS) UYAP'ta değil**: `ptt.etebligat.gov.tr` +
+`api.etebligat.gov.tr`, ayrı content script ve ayrı host izni gerektiriyor.
+
+Not: o eklentinin kodunda `vatandas` **hiç geçmiyor** — vatandaş portalını
+desteklemiyor. "Çalışan ürün nasıl yapıyor" sorusunun cevabı: başka portalda.
 
 ## `uyap_ref` seçme kuralı
 

@@ -5,6 +5,9 @@
   "scripts": {
     "build": "npm --prefix web ci && npm --prefix web run build",
     "start": "npm --prefix web run preview -- --host 0.0.0.0 --port ${PORT:-4173}",
-    "test": "node --test extension/evrak.test.mjs extension/kesif.test.mjs"
+    "test": "node --test extension/evrak.test.mjs extension/kesif.test.mjs extension/uyap.test.mjs"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.9.8"
   }
 }

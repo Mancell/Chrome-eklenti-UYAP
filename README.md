@@ -37,11 +37,14 @@ Eklentinin tablolara doğrudan yazma yetkisi yok — tek yol `eklenti_senkron`.
 | RPC'ler (`0002_rpc.sql`) | ✅ 7 test geçiyor |
 | Panel (`web/`) | ✅ derleniyor, typecheck temiz |
 | Eklenti iskeleti + UDF metin çıkarma | ✅ 5 test geçiyor |
-| **UYAP uçları (`extension/uyap.js` → `UCLAR`)** | ⛔ **BOŞ — Faz 0 keşif bekliyor** |
+| UYAP uçları — 5 tanesi **ölçüldü** (safahat, taraflar, tahsilat, evrak tipi, evrak indirme) | ✅ doğrulandı |
+| **Dosyalarım listesi ucu** | ⛔ **tek blokaj** — keşif bekliyor |
 | PDF evrak metni | ⏸ bilinçli tavan (bkz. `extension/README.md`) |
 
-Keşif bitene kadar senkron veri **akıtmaz**; net bir hata verir. Uydurma
-endpoint yazılmadı. Yapılışı: `docs/uyap-uclari.md`.
+Dosya listesi ucu bulunana kadar senkron veri **akıtmaz**; hangi ucun eksik
+olduğunu adıyla söyler. Uydurma endpoint yazılmadı — hangi uçların var olduğu
+`nosessionobject` sondasıyla **ölçüldü**. Yöntem ve tam tablo:
+`docs/uyap-uclari.md`.
 
 ## Kurulum
 
@@ -71,7 +74,7 @@ token; sunucu adresi ve genel anahtar `extension/ayarlar.js`'e gömülü.
 ## Testler
 
 ```bash
-node --test extension/evrak.test.mjs extension/kesif.test.mjs
+npm test
 ```
 
 Veritabanı testleri Docker gerektirmez — düz bir Postgres yeter:
