@@ -33,6 +33,9 @@ async function ayarlar() {
   return { ...a, supabaseUrl: a.supabaseUrl.replace(/\/+$/, '') };
 }
 
+// `tabs` izni YOK ve gerekmiyor: url'e göre sorgulamak için host izni yeterli
+// (host_permissions'ta vatandas.uyap.gov.tr var). `tabs` eklemek kullanıcıya
+// "göz atma geçmişinizi okur" uyarısı gösteriyordu — bedeli karşılığı yok.
 async function uyapSekmesi() {
   const [aktif] = await chrome.tabs.query({
     url: 'https://vatandas.uyap.gov.tr/*', active: true, currentWindow: true,
