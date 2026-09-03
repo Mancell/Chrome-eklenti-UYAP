@@ -22,7 +22,15 @@ const durum = (metin, sinif = '') => {
   // Popup kapalıyken gelen son durumu geri yükle: senkron arka planda sürerken
   // popup'ı tekrar açan kullanıcı boş ekran görmesin.
   const { sonDurum } = await chrome.storage.session.get('sonDurum');
-  if (sonDurum) gosterDurum(sonDurum);
+  if (sonDurum) {
+    gosterDurum(sonDurum);
+  } else if (a.token) {
+    // Token duruyor ama bu oturumda doğrulanmadı. "Bağlı" DEMİYORUZ: token
+    // panelden iptal edilmiş olabilir, bunu ancak sunucuya sorunca biliriz.
+    durum('Token kaydedildi. Sınamak için Bağlan’a basın.');
+  } else {
+    durum('Panelin Kurulum sayfasından token alıp buraya yapıştırın.');
+  }
 })();
 
 $('kaydet').addEventListener('click', async () => {

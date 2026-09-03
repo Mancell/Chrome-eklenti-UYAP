@@ -21,6 +21,24 @@ const EVRAK_TAVANI = 50;
 
 const bekle = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ponytail: MV3 service worker'ı ~30 sn hareketsizlikte sonlandırıyor ve
+// `setTimeout` boşta sayacını SIFIRLAMIYOR — NEZAKET_MS beklemeleri boyunca
+// işçi ölüp senkron ortada kalıyordu (kullanıcıya "kesiliyor" gibi görünüyor,
+// hiçbir hata da düşmüyor). Resmî "beni canlı tut" API'si yok; yaygın çözüm
+// periyodik boş bir chrome.* çağrısıyla sayacı sıfırlamak. Yalnız iş sürerken
+// çalışır. `chrome.alarms` kullanılmadı: yeni izin isterdi ve "arka planda
+// tarama yok" çizgisini bulanıklaştırırdı.
+// Tavan: Chrome bu davranışı değiştirirse doğru yol offscreen document.
+let _kalp = null;
+function kalbiBaslat() {
+  if (_kalp) return;
+  _kalp = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
+}
+function kalbiDurdur() {
+  if (_kalp) clearInterval(_kalp);
+  _kalp = null;
+}
+
 /**
  * Durumu HEM canlı mesajla HEM storage'a yazar.
  *
@@ -66,15 +84,27 @@ function sor(tabId, istek) {
 
 /** Supabase RPC. Kimlik ham token'da (anon key yalnız kapıyı açar). */
 export async function rpc(cfg, veri) {
-  const y = await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/eklenti_senkron`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: cfg.supabaseAnon,
-      Authorization: `Bearer ${cfg.supabaseAnon}`,
-    },
-    body: JSON.stringify({ p_token: cfg.token, p_veri: veri }),
-  });
+  let y;
+  try {
+    y = await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/eklenti_senkron`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: cfg.supabaseAnon,
+        Authorization: `Bearer ${cfg.supabaseAnon}`,
+      },
+      body: JSON.stringify({ p_token: cfg.token, p_veri: veri }),
+      // Zaman aşımı olmadan asılı bir istek kullanıcıyı sonsuza dek
+      // "Bağlanılıyor…"da bırakıyordu — sessiz bekleme, hata bile değil.
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (e) {
+    throw new Error(
+      e.name === 'TimeoutError' || e.name === 'AbortError'
+        ? 'Sunucuya ulaşılamadı (30 sn). İnternetinizi ve eklenti izinlerini kontrol edin.'
+        : `Sunucuya bağlanılamadı: ${e.message}`,
+    );
+  }
   const govde = await y.text();
   if (!y.ok) {
     let mesaj = `Sunucu ${y.status}`;
@@ -147,16 +177,20 @@ async function senkronCalistir() {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.tip === 'senkron-basla') {
+    kalbiBaslat();
     senkronCalistir()
       .then((sonuc) => bildir({ tip: 'bitti', sonuc }))
-      .catch((e) => bildir({ tip: 'hata', mesaj: e.message }));
+      .catch((e) => bildir({ tip: 'hata', mesaj: e.message }))
+      .finally(kalbiDurdur);
   }
 
   if (msg.tip === 'baglan') {
     // Boş senkron = token doğrulaması. Hiçbir şey yazmaz.
+    kalbiBaslat();
     ayarlar()
       .then((cfg) => rpc(cfg, {}))
       .then(() => bildir({ tip: 'baglandi' }))
-      .catch((e) => bildir({ tip: 'hata', mesaj: e.message }));
+      .catch((e) => bildir({ tip: 'hata', mesaj: e.message }))
+      .finally(kalbiDurdur);
   }
 });
