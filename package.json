@@ -1,0 +1,10 @@
+{
+  "name": "uyap-vatandas-senkron",
+  "private": true,
+  "description": "Railway/Nixpacks bu dosyayı görünce projeyi Node olarak tanıyor; asıl uygulama web/ altında.",
+  "scripts": {
+    "build": "npm --prefix web ci && npm --prefix web run build",
+    "start": "npm --prefix web run preview -- --host 0.0.0.0 --port ${PORT:-4173}",
+    "test": "node --test extension/evrak.test.mjs"
+  }
+}
