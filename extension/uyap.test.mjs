@@ -153,7 +153,7 @@ test('dosya listesi XML, taraf/evrak HTML olarak işaretli', () => {
 test('OPAK dosyaId (base64) çekiliyor — gerçek UYAP biçimi', () => {
   // Gerçek dosyaId sayı değil, 64 karakterlik şifreli jeton. İlk sürümdeki
   // \d{2,} deseni bunu hiç yakalamıyordu.
-  const jeton = 'ww6iHinZvx+hluPRY61cpK6DPMoL1cdxtMuJe0icBTk7bUTGsiGyFxvOZAT9KWqW';
+  const jeton = 'ORNEK@DOSYA+Jeton/Ornek000000000000000000000000000000000000000=';
   const m = html(`<table>
     <tr><th>Dosya No</th><th>Birim</th></tr>
     <tr><td><a href="/x.uyap?dosyaId=${jeton.replace(/\+/g, '%2B')}">2024/1</a></td><td>X</td></tr>
@@ -393,10 +393,10 @@ test('normalizeDurum: UYAP sayı kodu', () => {
 
 test('aynı dosya farklı jetonla → AYNI uyap_ref (çift kayıt önlenir)', () => {
   // ref(dosya_no, birim, acilis) — jeton hesaba katılmıyor.
-  const a = U.ref('2026/522', 'İstanbul BAM 2. Ceza', '2026-03-13');
-  const b = U.ref('2026/522', 'İstanbul BAM 2. Ceza', '2026-03-13');
+  const a = U.ref('2024/200', 'Örnek BAM 1. Ceza', '2026-03-13');
+  const b = U.ref('2024/200', 'Örnek BAM 1. Ceza', '2026-03-13');
   assert.equal(a, b, 'aynı dosya aynı ref üretmeli');
-  const farkli = U.ref('2025/404', 'İstanbul 24. Ağır Ceza', '2025-12-19');
+  const farkli = U.ref('2024/100', 'Örnek 1. Ağır Ceza', '2025-12-19');
   assert.notEqual(a, farkli, 'farklı dosya farklı ref');
 });
 
@@ -407,14 +407,14 @@ test('aynı dosya farklı jetonla → AYNI uyap_ref (çift kayıt önlenir)', ()
 // safahat/evrak/taraf boş dönüyordu (gerçek veride "0 safahat 0 evrak").
 // ---------------------------------------------------------------------------
 test('jetonTemizle: XML tırnağını soyuyor, base64 gövdesini bozmuyor', () => {
-  assert.equal(U.jetonTemizle('"ww6iHinZvx+hluPRY/61c="'), 'ww6iHinZvx+hluPRY/61c=');
+  assert.equal(U.jetonTemizle('"ORNEK@Jeton+Ornek/61c="'), 'ORNEK@Jeton+Ornek/61c=');
   assert.equal(U.jetonTemizle('ww6+/='), 'ww6+/=', 'tırnaksız zaten temiz');
   assert.equal(U.jetonTemizle('""'), null, 'sadece tırnak → null');
   assert.equal(U.jetonTemizle(null), null);
 });
 
 test('yargiTuruDenBirim: birim adından çıkarım (ad alanı gelmiyor)', () => {
-  assert.equal(U.yargiTuruDenBirim('İstanbul 24. Ağır Ceza Mahkemesi'), 'ceza');
+  assert.equal(U.yargiTuruDenBirim('Örnek 1. Ağır Ceza Mahkemesi'), 'ceza');
   assert.equal(U.yargiTuruDenBirim('Ankara 1. Asliye Hukuk Mahkemesi'), 'hukuk');
   assert.equal(U.yargiTuruDenBirim('İstanbul 3. İcra Müdürlüğü'), 'icra');
   assert.equal(U.yargiTuruDenBirim('Bölge İdare Mahkemesi'), 'idari');
@@ -430,11 +430,11 @@ test('yargiTuruDenBirim: birim adından çıkarım (ad alanı gelmiyor)', () => 
 //   </li>
 // evrak_id = görüntüleme/indirme JETONU. Ekler data-sid'siz, ana_evrak_id'li.
 // ---------------------------------------------------------------------------
-const T = '&lt;div&gt;Birim Evrak No: 5329&lt;/div&gt;&lt;div&gt;Evrakın Onaylandığı Tarih : 01/07/2026&lt;/div&gt;'
-        + '&lt;div&gt;Gönderen Yer/Kişi: İstanbul 24. Ağır Ceza Mahkemesi&lt;/div&gt;&lt;div&gt;Türü: İstinafa Evrak Gönderme Üst Yazısı&lt;/div&gt;';
-const EK = (n) => `<li><span class="file" ana_evrak_id="14273297528" evrak_id='"EKJETON${n}+/="'>Ek ${n}</span></li>`;
+const T = '&lt;div&gt;Birim Evrak No: 1001&lt;/div&gt;&lt;div&gt;Evrakın Onaylandığı Tarih : 01/07/2026&lt;/div&gt;'
+        + '&lt;div&gt;Gönderen Yer/Kişi: Örnek 1. Ağır Ceza Mahkemesi&lt;/div&gt;&lt;div&gt;Türü: İstinafa Evrak Gönderme Üst Yazısı&lt;/div&gt;';
+const EK = (n) => `<li><span class="file" ana_evrak_id="900001" evrak_id='"EKJETON${n}+/="'>Ek ${n}</span></li>`;
 const EVRAK_AGACI = `<div id="browser" class="filetree">
-  <li><span class="folder">İstanbul 24. Ağır Ceza Mahkemesi 2025/404</span><ul>
+  <li><span class="folder">Örnek 1. Ağır Ceza Mahkemesi 2024/100</span><ul>
     <li class="closed"><span class="folder" style="color:red">Dosyaya Eklenen Son 20 Evrak</span><ul>
       <li data-sid='İstinafa Evrak Gönderme Üst Yazısı 01/07/2026'>
         <span class="file" data-html="true" title="${T}" evrak_id='"ANAJETON+/="'>İstinafa Evrak Gönderme Üst Yazısı 01/07/2026</span>
@@ -459,7 +459,7 @@ test('evrakAgaci: ana evrak alanları title + data-sid’den', () => {
   const ana = r.find((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı');
   assert.ok(ana, 'ana evrak bulunamadı');
   assert.equal(ana.evrak_tarihi, '2026-07-01');
-  assert.equal(ana.gonderen, 'İstanbul 24. Ağır Ceza Mahkemesi');
+  assert.equal(ana.gonderen, 'Örnek 1. Ağır Ceza Mahkemesi');
   assert.equal(ana._evrakJeton, 'ANAJETON+/=', 'evrak_id tırnaksız jeton');
   assert.ok(ana.uyap_link.includes('evrakId=ANAJETON') && ana.uyap_link.includes('dosyaId=DJETON'),
     'link evrak JETONU + dosya JETONU ile: ' + ana.uyap_link);
@@ -484,8 +484,8 @@ test('evrakAgaci: tüm uyap_ref’ler birbirinden farklı (ekler çökmüyor)', 
 });
 
 test('titleAlanlari: HTML-encoded div’leri anahtar/değere çözüyor', () => {
-  const d = U.titleAlanlari('&lt;div&gt;Birim Evrak No: 10570&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: X&lt;/div&gt;');
-  assert.equal(d['Birim Evrak No'], '10570');
+  const d = U.titleAlanlari('&lt;div&gt;Birim Evrak No: 1002&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: X&lt;/div&gt;');
+  assert.equal(d['Birim Evrak No'], '1002');
   assert.equal(d['Gönderen Yer/Kişi'], 'X');
 });
 
@@ -629,13 +629,13 @@ test('evrakListesi: İLK sayfa pageNumber GÖNDERMEZ', () => {
 // Önceki hâli üç noktada yanlıştı (kök yol, mimeType yok, yargiTuru yok).
 // ---------------------------------------------------------------------------
 test('belgeUrl: gerçek çalışan URL biçimini üretiyor', () => {
-  const url = U.belgeUrl('goruntule', 'hZBUzwMtgyH4xtFa+1tv0@', '@Eu3u0X7@9xef+dObQV', 'ceza');
+  const url = U.belgeUrl('goruntule', 'ORNEK@EK2+Jeton/Ornek=', 'ORNEK@DOSYA+Jeton/Or=', 'ceza');
   assert.ok(url.startsWith('https://vatandas.uyap.gov.tr/main/jsp/view_document_brd.uyap?'),
     'yol /main/jsp/ altında olmalı: ' + url);
   const q = new URL(url).searchParams;
   assert.equal(q.get('mimeType'), 'Pdf');
-  assert.equal(q.get('evrakId'), 'hZBUzwMtgyH4xtFa+1tv0@', 'jeton bozulmadan geri okunmalı');
-  assert.equal(q.get('dosyaId'), '@Eu3u0X7@9xef+dObQV');
+  assert.equal(q.get('evrakId'), 'ORNEK@EK2+Jeton/Ornek=', 'jeton bozulmadan geri okunmalı');
+  assert.equal(q.get('dosyaId'), 'ORNEK@DOSYA+Jeton/Or=');
   assert.equal(q.get('yargiTuru'), '1', 'ceza → 1 (doğrulanmış eşleme)');
   // Jetondaki özel karakterler kaçışlanmış olmalı (ham + / @ URL'i bozar).
   assert.ok(url.includes('%40') && url.includes('%2B'), 'kaçış yok: ' + url);
@@ -661,7 +661,7 @@ test('belgeUrl: jeton yoksa null (indirme denenmesin)', () => {
 test('gerçek ağaçtan üretilen uyap_link çalışan biçimde', () => {
   const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci.html', import.meta.url), 'utf8');
   const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
-  const r = U.evrakAgaci(belge, 'DOSYA-REF', '@Eu3u0X7@9xef', 'ceza');
+  const r = U.evrakAgaci(belge, 'DOSYA-REF', 'ORNEK@DOSYA+Jeton', 'ceza');
   const ana = r.find((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı');
   assert.ok(ana.uyap_link.includes('/main/jsp/view_document_brd.uyap?'), ana.uyap_link);
   const q = new URL(ana.uyap_link).searchParams;
@@ -771,7 +771,7 @@ test('evrak iskeleti: ana evrak kendi kendine bağlanmıyor', () => {
 
 // ---------------------------------------------------------------------------
 // ÇOK SEVİYELİ klasör yolu — UYAP ağacı derin:
-//   Dava › Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
+//   Dava › Tüm Evraklar › 2024/100 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
 // Yalnız en yakın klasörü almak "neye ait olduğu" bilgisini yarım bırakıyordu.
 // ---------------------------------------------------------------------------
 test('klasör YOLU kökten yaprağa tam çıkarılıyor', () => {
@@ -782,7 +782,7 @@ test('klasör YOLU kökten yaprağa tam çıkarılıyor', () => {
   const talimat = r.find((e) => e.evrak_tipi === 'Talimat Gelen Evrak' && !e.ana_evrak_ref);
   assert.ok(talimat, 'ana evrak yok');
   assert.equal(talimat.klasor,
-    'İstanbul 24. Ağır Ceza Mahkemesi 2025/404 › Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)',
+    'Örnek 1. Ağır Ceza Mahkemesi 2024/100 › Tüm Evraklar › 2024/100 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)',
     'klasör yolu eksik: ' + talimat.klasor);
 
   // Farklı gruptaki evrak KENDİ yolunu taşımalı (gruplar karışmasın).

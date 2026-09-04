@@ -59,7 +59,7 @@ portalın kendi isteklerinden alındı.
 Opak, şifrelenmiş base64 jetonu:
 
 ```
-ww6iHinZvx+hluPRY61cpK6DPMoL1cdxtMuJe0icBTk7bUTGsiGyFxvOZAT9KWqW
+ORNEK@DOSYA+Jeton/Ornek000000000000000000000000000000000000000=
 ```
 
 `+` ve `/` içerdiği için **URL kaçışı şart** (`URLSearchParams`). İlk sürümdeki

@@ -349,7 +349,7 @@ function basligiEsle(metin) {
  * Satırdaki link/onclick/attribute içinden dosyaId çeker.
  *
  * DİKKAT: dosyaId SAYI DEĞİL — opak, şifrelenmiş bir base64 jetonu
- * ("ww6iHinZvx+hluPRY61cpK6DPMoL1cdxtMuJe0icBTk7bUTGsiGyFxvOZAT9KWqW").
+ * ("ORNEK@DOSYA+Jeton/Ornek000000000000000000000000000000000000000=").
  * İlk sürümdeki `\d{2,}` deseni bu yüzden hiçbir şey yakalamıyordu.
  */
 function satirdanDosyaId(satir) {
@@ -362,7 +362,7 @@ function satirdanDosyaId(satir) {
   }
   for (const parca of parcalar) {
     // base64 gövdesi: harf/rakam/+//=/%  (URL kaçışlı hâli de olabilir)
-    const m = /dosya[_-]?id["'\]\s]*[=:]\s*["']?([A-Za-z0-9+/%=_-]{2,})/i.exec(parca);
+    const m = /dosya[_-]?id["'\]\s]*[=:]\s*["']?([A-Za-z0-9+/%=@_-]{2,})/i.exec(parca);
     if (m) {
       try { return decodeURIComponent(m[1].replace(/"/g, '')); }
       catch { return m[1].replace(/"/g, ''); }
@@ -556,7 +556,7 @@ async function durusmalar(jeton) {
 /**
  * Evrak listesi bir AĞAÇ (treeview), tablo DEĞİL. UYAP her evrakı şöyle veriyor:
  *   <li data-sid='İstinafa Evrak Gönderme Üst Yazısı 25/06/2026'>
- *     <span class="file" title="&lt;div&gt;Birim Evrak No: 10570&lt;/div&gt;
+ *     <span class="file" title="&lt;div&gt;Birim Evrak No: 1002&lt;/div&gt;
  *       &lt;div&gt;Evrakın Onaylandığı Tarih: 25/06/2026&lt;/div&gt;
  *       &lt;div&gt;Gönderen Yer/Kişi: …&lt;/div&gt;…">
  * Klasör düğümleri (span.folder, "Dosyaya Eklenen Son 20 Evrak") atlanır.
@@ -615,7 +615,7 @@ function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
     const spanMetni = temizle(fileSpan.textContent);
 
     // Klasör YOLU — tek klasör değil, TÜM zincir. UYAP ağacı çok seviyeli:
-    //   Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
+    //   Tüm Evraklar › 2024/100 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
     // Yalnız en yakını almak "neye ait olduğu" bilgisini yarım bırakıyordu.
     // Kökten yaprağa sıralı, ' › ' ile birleşik tutuluyor.
     const yol = [];

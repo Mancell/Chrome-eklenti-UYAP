@@ -8,7 +8,7 @@ type Dugum =
 
 /**
  * UYAP'ın ağacını birebir kurar. Yapı çok seviyeli:
- *   Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
+ *   Tüm Evraklar › 2024/100 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
  *     └ Talimat Gelen Evrak 02/06/2025
  *         └ Ek 1, Ek 2, Ek 3
  * Düz liste "neyin neye ait olduğunu" kaybediyordu; klasör yolu ve ana/ek bağı

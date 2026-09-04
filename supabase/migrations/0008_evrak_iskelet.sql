@@ -2,7 +2,7 @@
 -- Evrak AĞAÇ YAPISINI koru
 --
 -- UYAP evrakları düz liste değil, bir ağaç olarak veriyor:
---   Dava (2026/522)
+--   Dava (2024/200)
 --     └ Klasör ("Dosyaya Eklenen Son 20 Evrak")
 --         └ Ana evrak ("İstinafa Evrak Gönderme Üst Yazısı")
 --             ├ Ek 1 … Ek 6
