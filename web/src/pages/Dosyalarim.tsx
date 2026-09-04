@@ -3,8 +3,8 @@ import { useTablo, trTarih, indirmeBaglantisi, type Satir } from '../lib/veri';
 
 /** Ağaç düğümü: klasör başlığı ya da evrak satırı. */
 type Dugum =
-  | { tip: 'klasor'; ad: string; derinlik: number; adet: number }
-  | { tip: 'evrak'; satir: Satir; derinlik: number; ek: boolean };
+  | { tip: 'klasor'; ad: string; derinlik: number; adet: number; yol: string }
+  | { tip: 'evrak'; satir: Satir; derinlik: number; ek: boolean; yol: string };
 
 /**
  * UYAP'ın ağacını birebir kurar. Yapı çok seviyeli:
@@ -33,22 +33,29 @@ function klasorAgaci(satirlar: Satir[]): Dugum[] {
     // Yalnız DEĞİŞEN seviyeleri yaz: ortak üst klasörler tekrar edilmesin.
     parcalar.forEach((ad, i) => {
       if (oncekiParcalar[i] === ad) return;
-      cikti.push({ tip: 'klasor', ad, derinlik: i, adet: i === parcalar.length - 1 ? evraklar.length : 0 });
+      cikti.push({
+        tip: 'klasor', ad, derinlik: i,
+        adet: i === parcalar.length - 1 ? evraklar.length : 0,
+        yol: parcalar.slice(0, i + 1).join(' › '),   // katlama anahtarı
+      });
     });
     oncekiParcalar = parcalar;
 
     const taban = parcalar.length;
     for (const ana of [...evraklar].sort(sirala)) {
-      cikti.push({ tip: 'evrak', satir: ana, derinlik: taban, ek: false });
+      const yolAnahtar = parcalar.join(' › ');
+      cikti.push({ tip: 'evrak', satir: ana, derinlik: taban, ek: false, yol: yolAnahtar });
       const ekler = satirlar.filter((x) => x.ana_evrak_ref === ana.uyap_ref).sort(sirala);
-      for (const ek of ekler) cikti.push({ tip: 'evrak', satir: ek, derinlik: taban + 1, ek: true });
+      for (const ek of ekler) {
+        cikti.push({ tip: 'evrak', satir: ek, derinlik: taban + 1, ek: true, yol: yolAnahtar });
+      }
     }
   }
 
   // Ana evrağı gelmemiş ekler (sayfalama kesintisi) kaybolmasın.
   const gosterilen = new Set(cikti.filter((d) => d.tip === 'evrak').map((d: any) => d.satir.id));
   for (const kalan of satirlar.filter((e) => !gosterilen.has(e.id)).sort(sirala)) {
-    cikti.push({ tip: 'evrak', satir: kalan, derinlik: 1, ek: Boolean(kalan.ana_evrak_ref) });
+    cikti.push({ tip: 'evrak', satir: kalan, derinlik: 1, ek: Boolean(kalan.ana_evrak_ref), yol: '' });
   }
   return cikti;
 }
@@ -57,6 +64,9 @@ export default function Dosyalarim() {
   const dosyalar = useTablo('dosyalar', { alan: 'acilis_tarihi' });
   const safahat = useTablo('safahat', { alan: 'tarih' });
   const [secili, setSecili] = useState<string | null>(null);
+  // Klasörler KAPALI başlar: 2000+ evraklı dosyada hepsini birden çizmek
+  // paneli kilitliyor. Açık olanların yolu burada tutuluyor.
+  const [acik, setAcik] = useState<Set<string>>(new Set());
   // Seçili dosyanın evrakları: tüm tabloyu çekip filtrelemek 1000 satır
   // limitine takılıyordu (4363 evrak var), bazı dosyalar boş görünüyordu.
   const evraklar = useTablo('evraklar', { alan: 'evrak_tarihi' },
@@ -93,7 +103,7 @@ export default function Dosyalarim() {
                 <tr
                   key={d.id}
                   className="secilebilir"
-                  onClick={() => setSecili(secili === d.id ? null : d.id)}
+                  onClick={() => { setSecili(secili === d.id ? null : d.id); setAcik(new Set()); }}
                   style={secili === d.id ? { background: '#f8f4f4' } : undefined}
                 >
                   <td>{d.dosya_no ?? '—'}</td>
@@ -119,7 +129,17 @@ export default function Dosyalarim() {
           <h3>{dosya.dosya_no} — {dosya.birim}</h3>
           <p className="alt">
             {suz(safahat.satirlar).length} işlem · {evraklar.satirlar.length} evrak
-            {evraklar.satirlar[0]?.klasor ? ` · ${evraklar.satirlar[0].klasor}` : ''}
+            {evraklar.yukleniyor && evraklar.toplam
+              ? ` · ${evraklar.satirlar.length}/${evraklar.toplam} yükleniyor…`
+              : ''}
+            {(() => {
+              // Klasörsüz evrak = eski senkrondan kalma; ağaç düz görünür.
+              // Kullanıcı sebebini tahmin etmesin.
+              const eski = evraklar.satirlar.filter((e) => !e.klasor).length;
+              return eski && !evraklar.yukleniyor
+                ? ` · ⚠ ${eski} evrak eski senkrondan — yeniden senkronlayın`
+                : '';
+            })()}
             {dosya.rol ? ` · Rolünüz: ${dosya.rol}` : ''}
           </p>
 
@@ -149,15 +169,26 @@ export default function Dosyalarim() {
               <table>
                 <thead><tr><th>Tarih</th><th>Evrak</th><th>Gönderen</th><th>Belge</th></tr></thead>
                 <tbody>
-                  {klasorAgaci(evraklar.satirlar).map((d, i) =>
+                  {klasorAgaci(evraklar.satirlar)
+                    .filter((d) =>
+                      // Klasör başlıkları hep görünür; evraklar yalnız klasörü
+                      // AÇIKSA çizilir — kapalı olanlar hiç render edilmiyor.
+                      d.tip === 'klasor' || !d.yol || acik.has(d.yol))
+                    .map((d, i) =>
                     d.tip === 'klasor' ? (
                       // Klasör başlığı: tüm satırı kaplar, evraklardan ayrışsın.
-                      <tr key={`k${i}`}>
+                      <tr key={`k${i}`} className="secilebilir"
+                          onClick={() => setAcik((o) => {
+                            const y = new Set(o);
+                            y.has(d.yol) ? y.delete(d.yol) : y.add(d.yol);
+                            return y;
+                          })}>
                         <td colSpan={4} style={{
                           paddingLeft: 12 + d.derinlik * 22,
                           background: '#faf8f8', fontWeight: 600, color: '#605d5d',
                         }}>
-                          📂 {d.ad}{d.adet ? ` (${d.adet})` : ''}
+                          {d.adet ? (acik.has(d.yol) ? '▼ ' : '▶ ') : ''}📂 {d.ad}
+                          {d.adet ? ` (${d.adet})` : ''}
                         </td>
                       </tr>
                     ) : (

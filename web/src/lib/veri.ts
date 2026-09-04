@@ -18,22 +18,36 @@ export function useTablo(
   const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
+  // Yükleme ilerlemesi: bir dosyada 2000+ evrak olabiliyor, sayfalama sürerken
+  // kullanıcı ne kadarının geldiğini görsün.
+  const [toplam, setToplam] = useState<number | null>(null);
 
   useEffect(() => {
     let iptal = false;
 
     async function cek() {
-      let s = supabase.from(tablo).select('*');
-      if (filtre) {
-        if (!filtre.deger) { setSatirlar([]); setYukleniyor(false); return; }
-        s = s.eq(filtre.alan, filtre.deger);
+      const SAYFA = 1000;          // PostgREST'in tek istekte döndürdüğü üst sınır
+      const AZAMI_SAYFA = 20;      // 20 000 satır; sonsuz döngüye karşı emniyet
+      const hepsi: Satir[] = [];
+      setYukleniyor(true);
+
+      for (let sayfa = 0; sayfa < AZAMI_SAYFA; sayfa++) {
+        let s = supabase.from(tablo).select('*', sayfa === 0 ? { count: 'exact' } : {});
+        if (filtre) {
+          if (!filtre.deger) { setSatirlar([]); setToplam(0); setYukleniyor(false); return; }
+          s = s.eq(filtre.alan, filtre.deger);
+        }
+        if (sirala) s = s.order(sirala.alan, { ascending: sirala.artan ?? false, nullsFirst: false });
+        const { data, error, count } = await s.range(sayfa * SAYFA, sayfa * SAYFA + SAYFA - 1);
+        if (iptal) return;
+        if (error) { setHata(error.message); break; }
+        if (sayfa === 0 && typeof count === 'number') setToplam(count);
+
+        hepsi.push(...(data ?? []));
+        setSatirlar([...hepsi]);            // gelen kadarını hemen göster
+        if (!data || data.length < SAYFA) break;   // son sayfa
       }
-      if (sirala) s = s.order(sirala.alan, { ascending: sirala.artan ?? false, nullsFirst: false });
-      const { data, error } = await s;
-      if (iptal) return;
-      if (error) setHata(error.message);
-      else setSatirlar(data ?? []);
-      setYukleniyor(false);
+      if (!iptal) setYukleniyor(false);
     }
     cek();
 
@@ -49,7 +63,7 @@ export function useTablo(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tablo, sirala?.alan, sirala?.artan, filtre?.alan, filtre?.deger]);
 
-  return { satirlar, yukleniyor, hata };
+  return { satirlar, yukleniyor, hata, toplam };
 }
 
 export const bugun = new Date().toISOString().slice(0, 10);

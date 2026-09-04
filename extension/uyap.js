@@ -674,7 +674,9 @@ function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
       dosya_ref: dosyaRef,
       ana_evrak_ref,             // NULL ise kök (ana evrak)
       klasor,
-      sira: ++sira,              // UYAP'ın verdiği görünüm sırası anlamlı
+      // METİN olarak: RPC jsonb_to_recordset ile `sira text` okuyup _sayi() ile
+      // int'e çeviriyor. Sayı göndermek bu alanı sessizce boş bırakabiliyordu.
+      sira: String(++sira),
       _jeton: jeton,             // dosya jetonu (indirme sorgusu için)
       _evrakJeton: evrakJeton,   // evrak jetonu (indirme/görüntüleme). Panele YAZILMAZ.
       _yargiTuru: yargiTuruAdi,  // indirme URL'i için. Panele YAZILMAZ.

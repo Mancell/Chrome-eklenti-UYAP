@@ -754,8 +754,8 @@ test('evrak iskeleti: ana/ek bağı, klasör ve sıra korunuyor', () => {
   assert.ok(kokler[0].klasor.includes(' › '), 'yol ayracı yok: ' + kokler[0].klasor);
 
   // Sıra: UYAP'ın görünüm sırası, ana evrak ilk.
-  assert.equal(kokler[0].sira, 1);
-  assert.deepEqual(sade(ekler.map((e) => e.sira)), [2, 3, 4, 5, 6, 7]);
+  assert.equal(kokler[0].sira, '1', 'sira metin (RPC text bekliyor)');
+  assert.deepEqual(sade(ekler.map((e) => Number(e.sira))), [2, 3, 4, 5, 6, 7]);
 
   // Hepsi aynı davaya bağlı — iskeletin kökü.
   assert.ok(r.every((e) => e.dosya_ref === 'D1'), 'dava bağı kopmuş');
@@ -803,4 +803,21 @@ test('derin ağaçta ekler doğru ana evrağa bağlanıyor', () => {
   // Bağlandıkları evrak, eklerin ÜSTÜNDEKİ düğüm olmalı (16/10 değil 02/06).
   const ana = r.find((e) => e.uyap_ref === ekler[0].ana_evrak_ref);
   assert.equal(ana.evrak_tarihi, '2025-06-02', 'ekler yanlış evrağa bağlandı: ' + ana.evrak_tarihi);
+});
+
+// ---------------------------------------------------------------------------
+// `sira` METİN olarak gönderilmeli: RPC jsonb_to_recordset ile `sira text`
+// okuyor. Sayı göndermek bu alanı sessizce boş bırakıyordu (canlıda
+// sira_dolu = 0 çıktı).
+// ---------------------------------------------------------------------------
+test('sira RPC ile aynı tipte (metin) gönderiliyor', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci-derin.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+  const r = U.evrakAgaci(belge, 'D1', 'JETON', 'ceza');
+  assert.ok(r.length > 0);
+  for (const e of r) {
+    assert.equal(typeof e.sira, 'string', `sira metin olmalı, ${typeof e.sira} geldi`);
+  }
+  // Sıra yine de sayısal olarak anlamlı kalmalı (panel buna göre diziyor).
+  assert.deepEqual(sade(r.map((e) => Number(e.sira))), [1, 2, 3, 4, 5, 6]);
 });
