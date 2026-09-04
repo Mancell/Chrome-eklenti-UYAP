@@ -118,13 +118,43 @@ export async function rpc(cfg, veri) {
   return JSON.parse(govde || '{}');
 }
 
+/**
+ * Senkron durumunu VERİTABANINA yazar — panel köprüsü. Kullanıcı senkronun
+ * çalışıp çalışmadığını popup açmadan, panelden görebilsin diye. Best-effort:
+ * durum yazımı başarısız olsa da senkron devam etmeli.
+ */
+async function durumBildir(cfg, durum, mesaj, sayi) {
+  try {
+    await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/senkron_durum`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: cfg.supabaseAnon,
+        Authorization: `Bearer ${cfg.supabaseAnon}`,
+      },
+      body: JSON.stringify({ p_token: cfg.token, p_durum: durum, p_mesaj: mesaj ?? null, p_sayi: sayi ?? null }),
+    });
+  } catch { /* durum bildirimi kritik değil */ }
+}
+
 async function senkronCalistir() {
   const cfg = await ayarlar();
+  try {
+    return await _senkron(cfg);
+  } catch (e) {
+    // Hata panele de yazılsın — kullanıcı popup açmadan görebilsin.
+    await durumBildir(cfg, 'hata', e.message, null);
+    throw e;
+  }
+}
+
+async function _senkron(cfg) {
   const sekme = await uyapSekmesi();
   if (!sekme) {
     throw new Error('Açık bir UYAP Vatandaş Portalı sekmesi yok. Önce vatandas.uyap.gov.tr’ye girin.');
   }
 
+  await durumBildir(cfg, 'basladi', 'Dosya listesi alınıyor…', null);
   bildir({ tip: 'ilerleme', mesaj: 'Dosya listesi alınıyor…' });
   const { veri: dosyalar } = await sor(sekme.id, { tip: 'dosyalar' });
 
@@ -136,6 +166,8 @@ async function senkronCalistir() {
   // döndürdüğü alan adlarını popup'a taşıyoruz. Panele YAZILMIYOR.
   const alanlar = dosyalar[0]?._alanlar ?? null;
   for (const d of dosyalar) { delete d._domdan; delete d._idVar; delete d._alanlar; }
+  // _dosyaId (jeton) döngü boyunca alt uçlar için lazım; panele YAZILMADAN
+  // önce paket gönderiminden hemen önce silinecek (aşağıda).
 
   // Alan eşlemesini ilk çalıştırmada kesinleştirmek için: hangi künye kolonu
   // KAÇ dosyada dolu? "acilis_tarihi: 0/3" görünce alan adının yanlış olduğunu
@@ -165,7 +197,8 @@ async function senkronCalistir() {
     // Birleştirme mantığı uyap.js'te (tarafMetni) — tek yerde.
     if (!d.taraflar && yetenek.taraflar !== false) {
       try {
-        const { metin } = await sor(sekme.id, { tip: 'taraf-metni', dosyaRef: d.uyap_ref });
+        // UYAP uçları JETON istiyor (uyap_ref artık içerik hash'i, jeton değil).
+        const { metin } = await sor(sekme.id, { tip: 'taraf-metni', jeton: d._dosyaId });
         if (metin) d.taraflar = metin;
       } catch { /* taraflar kritik değil, dosya yine yazılsın */ }
       await bekle(NEZAKET_MS);
@@ -173,7 +206,7 @@ async function senkronCalistir() {
 
     for (const tip of cekilecek) {
       try {
-        const { veri } = await sor(sekme.id, { tip, dosyaRef: d.uyap_ref });
+        const { veri } = await sor(sekme.id, { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
       } catch (e) {
         // Tek bir dosyanın safahatı alınamazsa TÜM senkron düşmesin.
@@ -187,7 +220,7 @@ async function senkronCalistir() {
   for (const e of paket.evraklar) {
     if (indirilen >= EVRAK_TAVANI) break;
     try {
-      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e.uyap_ref, dosyaRef: e.dosya_ref });
+      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e.uyap_ref, jeton: e._jeton });
       const ikili = atob(base64);
       const bayt = new Uint8Array(ikili.length);
       for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i);
@@ -204,8 +237,13 @@ async function senkronCalistir() {
   // ve kullanıcı ertelemeyi seçti. Eskiden burada karşılığı olmayan bir mesaj
   // gönderiliyor ve her senkronda "Bilinmeyen istek." hatası üretiliyordu.
 
+  for (const d of dosyalar) delete d._dosyaId;   // jeton panele yazılmaz
+  for (const e of paket.evraklar) delete e._jeton;
   bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
   const sonuc = await rpc(cfg, paket);
+  await durumBildir(cfg, 'bitti',
+    `${paket.dosyalar.length} dosya, ${paket.safahat.length} safahat, ${paket.evraklar.length} evrak`,
+    paket.dosyalar.length);
   if (atlanan.length) sonuc._atlanan = atlanan.join(', ');
   // `_yol` panele YAZILMIYOR; yalnız popup'ta gösteriliyor.
   sonuc._yol = domdan

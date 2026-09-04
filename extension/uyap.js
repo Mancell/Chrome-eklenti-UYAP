@@ -228,6 +228,11 @@ function normalizeDurum(deger) {
   const k = t.toLocaleLowerCase('tr');
   if (k.includes('açık') || k.includes('acik') || k.includes('derdest')) return 'açık';
   if (k.includes('kapalı') || k.includes('kapali')) return 'kapalı';
+  // UYAP durum'u SAYI KODU olarak veriyor ("0", "29"). Kesin eşleme UYAP'tan
+  // netleşmedi; gözlemlenen "0" derdest/açık dosyalarda görüldü. Tanınmayan kod
+  // OLDUĞU GİBİ dönüyor (veri kaybı yok); panel "Durum kodu: N" gösteriyor,
+  // anlamı netleşince buraya tek satır eklenir.
+  if (/^\d+$/.test(k)) return k === '0' ? 'açık' : `kod:${k}`;
   return k;
 }
 
@@ -432,29 +437,42 @@ async function dosyalar() {
   const gorulen = new Set();
   const cikti = [];
   for (const s of hamSatirlar) {
-    const id = alan(s, 'dosyaId', 'dosyaID', 'id');
-    const uyap_ref = String(id ?? ref(JSON.stringify(s)));
+    const dosya_no = alan(s, 'dosyaNo', 'esasNo', 'dosyaNumarasi');
+    const birim = alan(s, 'birimAdi', 'birim', 'mahkemeAdi');
+    const acilis_tarihi = tarih(alan(s, 'dosyaAcilisTarihi', 'acilisTarihi', 'acilisTarih'));
+
+    // KİMLİK = İÇERİK, jeton DEĞİL. UYAP dosyaId'yi her sorguda farklı şifreli
+    // jeton olarak veriyor → idempotency anahtarı olamaz (aynı dosya çift kayıt
+    // oluyordu). uyap_ref içerikten türetiliyor: aynı dosya her senkronda aynı.
+    const uyap_ref = ref(dosya_no, birim, acilis_tarihi);
     if (gorulen.has(uyap_ref)) continue;      // açık/kapalı sorguları çakışabilir
     gorulen.add(uyap_ref);
+
+    // Opak jeton AYRI taşınıyor: safahat/evrak/taraf çağrıları HÂLÂ bunu istiyor
+    // (o çağrılar aynı oturumda, jeton o oturumda geçerli). Panele YAZILMIYOR.
+    const _dosyaId = alan(s, 'dosyaId', 'dosyaID', 'id');
+
+    const durumHam = alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum');
     cikti.push({
       uyap_ref,
-      dosya_no: alan(s, 'dosyaNo', 'esasNo', 'dosyaNumarasi'),
-      birim: alan(s, 'birimAdi', 'birim', 'mahkemeAdi'),
-      yargi_turu: alan(s, 'yargiTuruAdi', 'yargiTuru', 'yargiTipi'),
-      dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru'),
+      dosya_no,
+      birim,
+      yargi_turu: alan(s, 'yargiTuruAdi', 'yargiTuru', 'yargiTipi', 'yargiTuruAciklama'),
+      dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru', 'dosyaTurAdi'),
       taraflar: alan(s, 'taraflar', 'tarafAdi', 'karsiTaraf'),
-      acilis_tarihi: tarih(alan(s, 'dosyaAcilisTarihi', 'acilisTarihi', 'acilisTarih')),
-      durum: normalizeDurum(alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum')),
-      // İlk gerçek çalıştırmada alan eşlemesini kesinleştirmek için: yanıtta
-      // HANGİ alanların geldiğini popup'a taşıyoruz. Panele YAZILMIYOR.
+      acilis_tarihi,
+      durum: normalizeDurum(durumHam),
+      _dosyaId,
       _alanlar: Object.keys(s),
     });
   }
   return cikti;
 }
 
-async function safahat(dosyaRef) {
-  return satirlara('safahat', await cagir('safahat', { dosyaId: dosyaRef })).map((s) => ({
+// jeton: UYAP çağrısı için (o oturumda geçerli). dosyaRef: dosyanın KALICI
+// uyap_ref'i, RPC bunu dosya_id'ye çözecek. İkisi artık farklı değer.
+async function safahat(jeton, dosyaRef) {
+  return satirlara('safahat', await cagir('safahat', { dosyaId: jeton })).map((s) => ({
     uyap_ref: ref(dosyaRef, alan(s, 'Tarih', 'tarih', 'islemTarihi'), alan(s, 'İşlem', 'islem', 'Açıklama', 'aciklama')),
     dosya_ref: dosyaRef,
     tarih: tarih(alan(s, 'Tarih', 'tarih', 'islemTarihi')),
@@ -463,9 +481,9 @@ async function safahat(dosyaRef) {
   }));
 }
 
-async function durusmalar(dosyaRef) {
+async function durusmalar(jeton) {
   if (!UCLAR.durusmalar) throw eksikUc('durusmalar');
-  return satirlara('durusmalar', await cagir('durusmalar', { dosyaId: dosyaRef }));
+  return satirlara('durusmalar', await cagir('durusmalar', { dosyaId: jeton }));
 }
 
 /**
@@ -473,12 +491,12 @@ async function durusmalar(dosyaRef) {
  * veriyor. Tek sayfa çekmek 879 KB'lık gerçek yanıtta evrakların yarısını
  * kaçırıyordu.
  */
-async function evrakListesi(dosyaRef) {
+async function evrakListesi(jeton, dosyaRef) {
   const hepsi = [];
   let toplamSayfa = 1;
 
   for (let sayfa = 1; sayfa <= toplamSayfa && sayfa <= 20; sayfa++) {
-    const metin = await cagir('evrakListesi', { dosyaId: dosyaRef, pageNumber: String(sayfa) });
+    const metin = await cagir('evrakListesi', { dosyaId: jeton, pageNumber: String(sayfa) });
     if (sayfa === 1) {
       const m = /var\s+pageTotal\s*=\s*(\d+)/.exec(metin);
       if (m) toplamSayfa = Math.max(1, parseInt(m[1], 10));
@@ -488,6 +506,7 @@ async function evrakListesi(dosyaRef) {
       hepsi.push({
         uyap_ref: String(evrakId ?? ref(dosyaRef, JSON.stringify(s))),
         dosya_ref: dosyaRef,
+        _jeton: jeton,   // evrak indirme için (evrakIndir dosya jetonunu ister)
         evrak_tipi: alan(s, 'Evrak Türü', 'Tür', 'evrakTipi', 'Açıklama'),
         evrak_tarihi: tarih(alan(s, 'Tarih', 'tarih', 'evrakTarihi')),
         gonderen: alan(s, 'Gönderen', 'gonderen', 'Gönderen Birim'),
@@ -519,14 +538,14 @@ function tarafMetni(satirlar) {
   return parcalar.slice(0, 6).join(' · ') + ` · +${parcalar.length - 6} kişi`;
 }
 
-async function taraflar(dosyaRef) {
-  return satirlara('taraflar', await cagir('taraflar', { dosyaId: dosyaRef }));
+async function taraflar(jeton) {
+  return satirlara('taraflar', await cagir('taraflar', { dosyaId: jeton }));
 }
 
 /** Evrak baytı → base64. Metin ÇIKARILMAZ burada (background yapar). */
-async function evrakIndir(evrakRef, dosyaRef) {
-  // URLSearchParams şart: dosyaId base64 olduğu için `+` ve `/` içeriyor.
-  const q = new URLSearchParams({ evrakId: evrakRef, dosyaId: dosyaRef ?? '' });
+async function evrakIndir(evrakRef, jeton) {
+  // URLSearchParams şart: jeton base64 olduğu için `+` ve `/` içeriyor.
+  const q = new URLSearchParams({ evrakId: evrakRef, dosyaId: jeton ?? '' });
   const y = await fetch(`${TABAN}${UCLAR.evrakIndir.yol}?${q}`, {
     credentials: 'include',
     headers: { 'X-Requested-With': 'XMLHttpRequest' },

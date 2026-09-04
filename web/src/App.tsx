@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { useTablo, gecenSure } from './lib/veri';
 import Kurulum from './pages/Kurulum';
 import Dosyalarim from './pages/Dosyalarim';
 import Durusmalar from './pages/Durusmalar';
@@ -61,6 +62,41 @@ function cevir(m: string): string {
   return m;
 }
 
+/**
+ * Üst senkron şeridi — kullanıcının "çalıştı mı, sürüyor mu, ne geldi"
+ * sorularının cevabı. senkron_gunlugu realtime olduğu için canlı güncelleniyor.
+ */
+function SenkronSerit() {
+  const { satirlar } = useTablo('senkron_gunlugu', { alan: 'guncellendi' });
+  const son = satirlar[0];
+  if (!son) {
+    return (
+      <div style={seritStil('#eef2f7', '#42566b')}>
+        Henüz senkron yok. UYAP'a girip <b>Dosyalarım</b> sayfasını açın — veriler
+        otomatik gelir.
+      </div>
+    );
+  }
+  if (son.durum === 'basladi') {
+    return <div style={seritStil('#fff7e6', '#8a6100')}>⏳ Senkron sürüyor… {son.mesaj ?? ''}</div>;
+  }
+  if (son.durum === 'hata') {
+    return <div style={seritStil('#fdecea', '#ae1800')}>⚠ Senkron hatası: {son.mesaj ?? ''}</div>;
+  }
+  return (
+    <div style={seritStil('#eaf6ec', '#1a6b34')}>
+      ✓ Son senkron {gecenSure(son.guncellendi)} · {son.mesaj ?? `${son.dosya_sayisi ?? 0} dosya`}
+    </div>
+  );
+}
+
+function seritStil(bg: string, renk: string): React.CSSProperties {
+  return {
+    background: bg, color: renk, padding: '8px 16px', fontSize: 13,
+    borderBottom: '1px solid rgba(0,0,0,0.06)',
+  };
+}
+
 export default function App() {
   const [oturum, setOturum] = useState<Session | null>(null);
   const [hazir, setHazir] = useState(false);
@@ -88,7 +124,10 @@ export default function App() {
         ))}
         <button style={{ marginTop: 20 }} onClick={() => supabase.auth.signOut()}>Çıkış</button>
       </nav>
-      <main className="icerik"><Bilesen /></main>
+      <main className="icerik">
+        <SenkronSerit />
+        <Bilesen />
+      </main>
     </div>
   );
 }

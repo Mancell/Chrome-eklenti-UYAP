@@ -48,7 +48,11 @@ export default function Dosyalarim() {
                   <td>{d.dosya_turu ?? '—'}</td>
                   <td>{d.taraflar ?? '—'}</td>
                   <td>{trTarih(d.acilis_tarihi)}</td>
-                  <td className={d.durum === 'açık' ? 'yesil' : undefined}>{d.durum ?? '—'}</td>
+                  <td className={d.durum === 'açık' ? 'yesil' : undefined}>
+                    {!d.durum ? '—'
+                      : String(d.durum).startsWith('kod:') ? `Durum kodu: ${String(d.durum).slice(4)}`
+                      : d.durum}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -61,3 +61,16 @@ export function kalanGun(sonGun: string): number {
     (Date.parse(sonGun + 'T00:00:00Z') - Date.parse(bugun + 'T00:00:00Z')) / 86400000,
   );
 }
+
+/** "az önce" / "2 dk önce" / "3 sa önce" / "12.03.2024" — insan-okur zaman. */
+export function gecenSure(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const fark = Date.now() - Date.parse(iso);
+  if (isNaN(fark)) return '';
+  const dk = Math.floor(fark / 60000);
+  if (dk < 1) return 'az önce';
+  if (dk < 60) return `${dk} dk önce`;
+  const sa = Math.floor(dk / 60);
+  if (sa < 24) return `${sa} sa önce`;
+  return trTarih(iso);
+}

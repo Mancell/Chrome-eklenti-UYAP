@@ -362,7 +362,10 @@ test('dosya kaydının alanları şema kolonlarını karşılıyor', () => {
   const src = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
   const blok = src.slice(src.indexOf('gorulen.add(uyap_ref);'), src.indexOf('_alanlar:'));
   // `uyap_ref,` shorthand olduğu için `:` opsiyonel.
-  const anahtarlar = [...blok.matchAll(/^\s{6}(\w+)[,:]/gm)].map((m) => m[1]);
+  const anahtarlar = [...blok.matchAll(/^\s{6}(\w+)[,:]/gm)].map((m) => m[1])
+    // `_` önekli alanlar (_dosyaId, _alanlar) geçici — background panele
+    // yazmadan siler. Şema kolonu değiller.
+    .filter((a) => !a.startsWith('_'));
   // 0001_sema.sql dosyalar kolonları (kullanici_id/olusturuldu/guncellendi hariç):
   const sema = ['uyap_ref', 'dosya_no', 'birim', 'yargi_turu', 'dosya_turu',
                 'taraflar', 'acilis_tarihi', 'durum'];
@@ -372,4 +375,25 @@ test('dosya kaydının alanları şema kolonlarını karşılıyor', () => {
   for (const k of sema) {
     assert.ok(anahtarlar.includes(k), `dosya kaydında eksik şema kolonu: ${k}`);
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// uyap_ref ARTIK İÇERİKTEN türetiliyor. UYAP dosyaId'yi her sorguda farklı
+// jeton olarak veriyor (gerçek veri: aynı dosya iki uyap_ref ile çift kayıt
+// olmuştu). İçerik hash'i deterministik: aynı dosya her senkronda aynı ref.
+// ---------------------------------------------------------------------------
+test('normalizeDurum: UYAP sayı kodu', () => {
+  assert.equal(U.normalizeDurum('0'), 'açık', '0 → açık (gözlemlenen)');
+  assert.equal(U.normalizeDurum('29'), 'kod:29', 'tanınmayan kod ham korunuyor');
+  assert.equal(U.normalizeDurum('AÇIK'), 'açık', 'metin hâlâ çalışıyor');
+});
+
+test('aynı dosya farklı jetonla → AYNI uyap_ref (çift kayıt önlenir)', () => {
+  // ref(dosya_no, birim, acilis) — jeton hesaba katılmıyor.
+  const a = U.ref('2026/522', 'İstanbul BAM 2. Ceza', '2026-03-13');
+  const b = U.ref('2026/522', 'İstanbul BAM 2. Ceza', '2026-03-13');
+  assert.equal(a, b, 'aynı dosya aynı ref üretmeli');
+  const farkli = U.ref('2025/404', 'İstanbul 24. Ağır Ceza', '2025-12-19');
+  assert.notEqual(a, farkli, 'farklı dosya farklı ref');
 });
