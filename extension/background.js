@@ -189,6 +189,9 @@ async function _senkron(cfg) {
   let yetenek = {};
   try { ({ veri: yetenek } = await sor(sekme.id, { tip: 'yetenekler' })); } catch { /* eski sürüm */ }
   const UC_ADI = { safahat: 'safahat', durusmalar: 'durusmalar', 'evrak-listesi': 'evrakListesi' };
+  // UYAP'ın izin listesindeki adlar (islem_turleri yanıtı).
+  const IZIN_ADI = { safahat: 'safahat_bilgileri', 'evrak-listesi': 'evrak_bilgileri', durusmalar: 'durusma_bilgileri' };
+  const desteksiz = {};   // "3 dosyada safahat yok" bilgisi — hata değil
   const cekilecek = ['safahat', 'durusmalar', 'evrak-listesi']
     .filter((t) => yetenek[UC_ADI[t]] !== false);
   const atlanan = ['safahat', 'durusmalar', 'evrak-listesi'].filter((t) => !cekilecek.includes(t));
@@ -200,8 +203,25 @@ async function _senkron(cfg) {
     // Progress bar: panel bu islenen/toplam'dan çubuğu dolduruyor.
     await durumBildir(cfg, 'basladi', durumMesaji, null, i + 1, dosyalar.length);
 
+    // ÖNCE dosyayı oturumda AKTİF ET. UYAP'ın kendi akışı da böyle (dosya
+    // listesi → islem_turleri → taraf/evrak). Atlanınca safahat `nosession`
+    // veriyor, evrak boş dönüyordu — "0 evrak"ın kök nedeni buydu.
+    // Dönen izin listesi ayrıca dosyanın NEYİ desteklediğini söylüyor.
+    let izinler = null;
+    try {
+      ({ izinler } = await sor(sekme.id, { tip: 'dosya-ac', jeton: d._dosyaId }));
+      await bekle(NEZAKET_MS);
+    } catch (e) {
+      // Dosya açılamadıysa alt uçları denemek anlamsız: 3 aynı hata yerine 1.
+      hatalar.push(`${d.dosya_no ?? '?'} dosya açılamadı: ${e.message}`);
+      continue;
+    }
+
+    // İzin listesi boşsa (beklenmedik yanıt) süzme yapma, hepsini dene.
+    const destekli = (ad) => !izinler || !izinler.length || izinler.includes(ad);
+
     // Taraflar ayrı uçtan; liste zaten veriyorsa boşuna isteme.
-    if (!d.taraflar && yetenek.taraflar !== false) {
+    if (!d.taraflar && yetenek.taraflar !== false && destekli('taraf_bilgileri')) {
       try {
         const { metin } = await sor(sekme.id, { tip: 'taraf-metni', jeton: d._dosyaId });
         if (metin) d.taraflar = metin;
@@ -210,6 +230,8 @@ async function _senkron(cfg) {
     }
 
     for (const tip of cekilecek) {
+      // Dosya bu sekmeyi desteklemiyorsa ÇAĞIRMA — hata değil, o veri yok.
+      if (!destekli(IZIN_ADI[tip])) { desteksiz[tip] = (desteksiz[tip] ?? 0) + 1; continue; }
       try {
         const { veri } = await sor(sekme.id, { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
@@ -254,10 +276,14 @@ async function _senkron(cfg) {
   // Hatalar varsa özete iliştir — kaç dosyada ne alınamadı görünür olsun.
   // Hata METNİ görünür olsun: "2 sorun (safahat)" hiçbir şey anlatmıyordu.
   // İlk 2 hatanın gerçek mesajı şeride gider; tahmin döngüsü bitsin.
+  const desteksizMesaj = Object.entries(desteksiz)
+    .map(([t, n]) => `${n} dosyada ${t} yok`).join(', ');
   const hataOzeti = hatalar.length
     ? ` · ${hatalar.length} sorun: ${hatalar.slice(0, 2).map((h) => h.slice(0, 120)).join(' | ')}`
     : '';
-  await durumBildir(cfg, 'bitti', ozet + hataOzeti, paket.dosyalar.length,
+  // Desteklenmeyen sekme HATA DEĞİL, bilgi: "3 dosyada safahat yok".
+  const bilgi = desteksizMesaj ? ` · ${desteksizMesaj}` : '';
+  await durumBildir(cfg, 'bitti', ozet + bilgi + hataOzeti, paket.dosyalar.length,
     paket.dosyalar.length, paket.dosyalar.length);
   if (atlanan.length) sonuc._atlanan = atlanan.join(', ');
   // `_yol` panele YAZILMIYOR; yalnız popup'ta gösteriliyor.
@@ -266,6 +292,9 @@ async function _senkron(cfg) {
     : 'liste UYAP ucundan alındı';
   if (alanlar) sonuc._alanlar = alanlar.join(', ');
   if (dosyalar.length) sonuc._doluluk = doluluk;
+  const desteksizOzet = Object.entries(desteksiz)
+    .map(([t, n]) => `${n} dosyada ${t} yok`).join(', ');
+  if (desteksizOzet) sonuc._desteksiz = desteksizOzet;
   if (hatalar.length) sonuc._hatalar = hatalar.slice(0, 5).join('\n  ');
   return sonuc;
 }

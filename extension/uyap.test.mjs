@@ -51,7 +51,7 @@ function yukle() {
     '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
     '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu,' +
     '   tablodanSatirlar, htmlBelge, satirlara, temizle, normalizeDurum, tarafMetni,' +
-    '   jetonTemizle, yargiTuruDenBirim, evrakAgaci, titleAlanlari })', g);
+    '   jetonTemizle, yargiTuruDenBirim, evrakAgaci, titleAlanlari, dosyaAc, cagir })', g);
 }
 
 const U = yukle();
@@ -520,3 +520,43 @@ test('evrakAgaci: Chrome gibi BÜYÜK HARF tagName ile de evrak buluyor', () => 
   assert.equal(r[1].evrak_tipi, 'Üst Yazı — Ek 1', 'ek, parentNode ile ana evrağı bulmalı');
 });
 
+
+
+// ---------------------------------------------------------------------------
+// dosyaAc — dosyayı UYAP oturumunda AKTİF eder. UYAP'ın kendi akışı her dosya
+// için önce bunu çağırıyor; atlanınca safahat `nosession`, evrak boş dönüyordu.
+// Yanıt ayrıca dosyanın hangi sekmeleri desteklediğini söylüyor.
+// ---------------------------------------------------------------------------
+function izinleriAyristir(xml) {
+  // dosyaAc'in ağ çağrısı dışındaki saf kısmı: xmlAyristir + <String> okuma.
+  const belge = U.xmlAyristir(xml);
+  const d = belge.getElementsByTagName('String')[0];
+  const ham = U.temizle(d && d.textContent);
+  return ham ? ham.split(',').map((x) => x.trim()).filter(Boolean) : [];
+}
+
+test('dosyaAc: HashMap yanıtından izin listesi çıkıyor', () => {
+  const izin = izinleriAyristir(
+    '<root><HashMap><Entry><BigDecimal>3</BigDecimal>' +
+    '<String>evrak_bilgileri,evrak_gonderme,odeme,tahsilat_reddiyat_bilgileri,taraf_bilgileri</String>' +
+    '</Entry></HashMap></root>');
+  assert.deepEqual(izin, ['evrak_bilgileri', 'evrak_gonderme', 'odeme',
+                          'tahsilat_reddiyat_bilgileri', 'taraf_bilgileri']);
+  // Gerçek keşif: BU dosyada safahat YOK. Çağırmak nosession veriyordu.
+  assert.ok(!izin.includes('safahat_bilgileri'), 'safahat desteklenmiyor olmalı');
+});
+
+test('dosyaAc: safahat destekleyen dosyada listede görünüyor', () => {
+  const izin = izinleriAyristir(
+    '<root><HashMap><Entry><String>evrak_bilgileri,safahat_bilgileri,taraf_bilgileri</String></Entry></HashMap></root>');
+  assert.ok(izin.includes('safahat_bilgileri'));
+});
+
+test('dosyaAc: nosession okunur cümleye çevriliyor', () => {
+  assert.throws(() => izinleriAyristir('<root><error>nosession</error></root>'), /UYAP hatası: nosession/);
+});
+
+test('dosyaAc: boş/şekilsiz yanıt boş dizi, çökme yok', () => {
+  assert.deepEqual(izinleriAyristir('<root><HashMap></HashMap></root>'), []);
+  assert.deepEqual(izinleriAyristir('<root><HashMap><Entry><String>  </String></Entry></HashMap></root>'), []);
+});

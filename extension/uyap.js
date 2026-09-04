@@ -651,6 +651,30 @@ function tarafMetni(satirlar) {
   return parcalar.slice(0, 6).join(' · ') + ` · +${parcalar.length - 6} kişi`;
 }
 
+/**
+ * Dosyayı UYAP OTURUMUNDA AKTİF EDER ve hangi sekmelerin desteklendiğini döner.
+ *
+ * UYAP'ın kendi akışı her dosya için önce bunu çağırıyor (keşif: dosya listesi →
+ * islem_turleri → taraf → evrak). Bu çağrı atlanınca sunucu dosyayı tanımıyor;
+ * safahat `nosession` ile reddediliyor, evrak boş dönüyor. "0 evrak" ve
+ * `nosession` hatasının tek kök nedeni buydu.
+ *
+ * Yanıt aynı zamanda dosyanın NEYİ desteklediğini söylüyor:
+ *   <root><HashMap><Entry><BigDecimal>3</BigDecimal>
+ *     <String>evrak_bilgileri,odeme,taraf_bilgileri</String></Entry></HashMap></root>
+ * `safahat_bilgileri` listede yoksa o dosyada safahat YOKTUR — çağırmak hata
+ * değil, gereksiz.
+ */
+async function dosyaAc(jeton) {
+  // Gövde UYAP'ınkiyle birebir: dosyaId=…&kurumNo=
+  const metin = await cagir('islemTurleri', { dosyaId: jeton, kurumNo: '' });
+  const belge = xmlAyristir(metin);   // nosession → okunur cümle
+  // HashMap şekli xmlSatirlar'a uymuyor; <String> doğrudan okunuyor.
+  const dugum = belge.getElementsByTagName('String')[0];
+  const ham = temizle(dugum && dugum.textContent);
+  return ham ? ham.split(',').map((x) => x.trim()).filter(Boolean) : [];
+}
+
 async function taraflar(jeton) {
   return satirlara('taraflar', await cagir('taraflar', { dosyaId: jeton }));
 }
@@ -728,8 +752,11 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'safahat':       return yanitla({ veri: await safahat(istek.dosyaRef) });
         case 'durusmalar':    return yanitla({ veri: await durusmalar(istek.dosyaRef) });
         case 'evrak-listesi': return yanitla({ veri: await evrakListesi(istek.dosyaRef) });
-        case 'taraflar':      return yanitla({ veri: await taraflar(istek.dosyaRef) });
-        case 'taraf-metni':   return yanitla({ metin: tarafMetni(await taraflar(istek.dosyaRef)) });
+        // JETON şart: dosyaRef içerik-hash'i, UYAP onu tanımaz.
+        case 'taraflar':      return yanitla({ veri: await taraflar(istek.jeton) });
+        case 'taraf-metni':   return yanitla({ metin: tarafMetni(await taraflar(istek.jeton)) });
+        // Dosyayı oturumda aktif eder; alt uçlardan ÖNCE çağrılmalı.
+        case 'dosya-ac':      return yanitla({ izinler: await dosyaAc(istek.jeton) });
         case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.dosyaRef) });
         case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
         // Hangi uçlar biliniyor? Background bunu bir kez sorup bilinmeyenleri
