@@ -160,13 +160,16 @@ begin
   -- 4) Evraklar. `metin` boş gelebilir (tanınmayan biçim) — satır yine yazılır,
   --    kullanıcı `uyap_link` ile belgeyi UYAP'ta açar.
   insert into public.evraklar
-    (kullanici_id, dosya_id, uyap_ref, evrak_tipi, evrak_tarihi, gonderen, metin, uyap_link, guncellendi)
+    (kullanici_id, dosya_id, uyap_ref, evrak_tipi, evrak_tarihi, gonderen, metin, uyap_link,
+     ana_evrak_ref, klasor, sira, guncellendi)
   select distinct on (trim(x.uyap_ref))
          v_kullanici, d.id, trim(x.uyap_ref), x.evrak_tipi, public._tarih(x.evrak_tarihi),
-         x.gonderen, nullif(x.metin, ''), x.uyap_link, now()
+         x.gonderen, nullif(x.metin, ''), x.uyap_link,
+         nullif(trim(x.ana_evrak_ref), ''), nullif(trim(x.klasor), ''), public._sayi(x.sira, null::int), now()
     from jsonb_to_recordset(coalesce(p_veri->'evraklar', '[]'::jsonb)) as x(
            uyap_ref text, dosya_ref text, evrak_tipi text, evrak_tarihi text,
-           gonderen text, metin text, uyap_link text)
+           gonderen text, metin text, uyap_link text,
+           ana_evrak_ref text, klasor text, sira text)
     left join public.dosyalar d
       on d.kullanici_id = v_kullanici and d.uyap_ref = nullif(trim(x.dosya_ref), '')
    where nullif(trim(x.uyap_ref), '') is not null
@@ -177,7 +180,9 @@ begin
     -- Metin YALNIZ dolu gelirse üzerine yazılır: ikinci senkronda evrak baytı
     -- indirilemezse önceden çıkarılmış metin silinmesin.
     metin = coalesce(excluded.metin, evraklar.metin),
-    uyap_link = excluded.uyap_link, guncellendi = now();
+    uyap_link = excluded.uyap_link,
+    ana_evrak_ref = excluded.ana_evrak_ref, klasor = excluded.klasor, sira = excluded.sira,
+    guncellendi = now();
   get diagnostics v_n = row_count;
   v_sonuc := v_sonuc || jsonb_build_object('evraklar', v_n);
 

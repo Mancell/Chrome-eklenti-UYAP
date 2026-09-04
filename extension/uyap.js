@@ -590,6 +590,13 @@ function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
   const TARIH = /^(.*?)\s*(\d{2}\/\d{2}\/\d{4})\s*$/;
 
   const cikti = [];
+  // Ekleri ana evrağa bağlamak için: <li> düğümü → uyap_ref haritası.
+  // `ana_evrak_id` niteliği YALNIZ eklerde var, ana evrakta YOK — bu yüzden
+  // bağ DOM hiyerarşisinden kuruluyor: ekin en yakın üst li[data-sid]'i ana
+  // evraktır. Ağaç iç içe <li> olduğu ve ana düğüm eklerinden önce geldiği
+  // için tek geçiş yeterli.
+  const refHaritasi = new Map();   // li düğümü → uyap_ref
+  let sira = 0;
   for (const li of belge.getElementsByTagName('li')) {
     // Yalnız DOĞRUDAN çocuğu span.file olan li (torunlar hayalet üretir).
     let fileSpan = null;
@@ -601,6 +608,18 @@ function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
     const evrakJeton = jetonTemizle(fileSpan.getAttribute('evrak_id'));
     const anaEvrakId = temizle(fileSpan.getAttribute('ana_evrak_id'));
     const spanMetni = temizle(fileSpan.textContent);
+
+    // Klasör: ağaçta bu evrağın bulunduğu grup ("Dosyaya Eklenen Son 20 Evrak").
+    // İskeletin bir parçası; düz listede tamamen kayboluyordu.
+    let klasor = null;
+    for (let u = li.parentNode; u && !klasor; u = u.parentNode) {
+      if (adi(u) !== 'li') continue;
+      for (const c of cocuklar(u)) {
+        if (adi(c) === 'span' && (c.getAttribute('class') || '').split(/\s+/).includes('folder')) {
+          klasor = temizle(c.textContent); break;
+        }
+      }
+    }
 
     const sid = temizle(li.getAttribute('data-sid'));   // ana evrakta "ad tarih"; ekte YOK
     let ad = null, tarihStr = null, ekMi = false;
@@ -635,9 +654,22 @@ function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
       ? ref(dosyaRef, 'evrakno', evrakNo)
       : ref(dosyaRef, anaEvrakId || '', ad || '', tarihStr || '', spanMetni || '');
 
+    // Ekse ana evrağı DOM'dan bul; her düğüm haritaya yazılıyor ki altındaki
+    // ekler onu bulabilsin.
+    let ana_evrak_ref = null;
+    if (ekMi) {
+      for (let u = li.parentNode; u; u = u.parentNode) {
+        if (adi(u) === 'li' && refHaritasi.has(u)) { ana_evrak_ref = refHaritasi.get(u); break; }
+      }
+    }
+    refHaritasi.set(li, uyap_ref);
+
     cikti.push({
       uyap_ref,
       dosya_ref: dosyaRef,
+      ana_evrak_ref,             // NULL ise kök (ana evrak)
+      klasor,
+      sira: ++sira,              // UYAP'ın verdiği görünüm sırası anlamlı
       _jeton: jeton,             // dosya jetonu (indirme sorgusu için)
       _evrakJeton: evrakJeton,   // evrak jetonu (indirme/görüntüleme). Panele YAZILMAZ.
       _yargiTuru: yargiTuruAdi,  // indirme URL'i için. Panele YAZILMAZ.

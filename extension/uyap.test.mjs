@@ -727,3 +727,42 @@ test('adim(): panel kısıtlı, bitti/hata muaf', () => {
   const kisitSatir = f.indexOf('if (!zorunlu');
   assert.ok(popupSatir > 0 && popupSatir < kisitSatir, 'popup kısıtlamaya takılıyor');
 });
+
+// ---------------------------------------------------------------------------
+// EVRAK İSKELETİ — UYAP'ın ağacı düz listeye çökmemeli. Bir davaya ait belge
+// indirildiğinde hangi evrağın eki olduğu, hangi klasörde durduğu ve sırası
+// korunmalı. Gerçek UYAP çıktısına karşı doğrulanıyor.
+// ---------------------------------------------------------------------------
+test('evrak iskeleti: ana/ek bağı, klasör ve sıra korunuyor', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+  const r = U.evrakAgaci(belge, 'D1', 'JETON', 'ceza');
+
+  const kokler = r.filter((e) => !e.ana_evrak_ref);
+  const ekler = r.filter((e) => e.ana_evrak_ref);
+  assert.equal(kokler.length, 1, 'tek ana evrak bekleniyor');
+  assert.equal(ekler.length, 6, '6 ek bekleniyor');
+
+  // Ekler ANA EVRAĞA bağlı olmalı — bağ DOM hiyerarşisinden kuruluyor çünkü
+  // `ana_evrak_id` niteliği yalnız eklerde var, ana evrakta YOK.
+  assert.ok(ekler.every((e) => e.ana_evrak_ref === kokler[0].uyap_ref),
+    'ekler ana evrağa bağlanmamış');
+
+  // Klasör bilgisi (düz listede tamamen kayboluyordu).
+  assert.equal(kokler[0].klasor, 'Dosyaya Eklenen Son 20 Evrak');
+
+  // Sıra: UYAP'ın görünüm sırası, ana evrak ilk.
+  assert.equal(kokler[0].sira, 1);
+  assert.deepEqual(sade(ekler.map((e) => e.sira)), [2, 3, 4, 5, 6, 7]);
+
+  // Hepsi aynı davaya bağlı — iskeletin kökü.
+  assert.ok(r.every((e) => e.dosya_ref === 'D1'), 'dava bağı kopmuş');
+});
+
+test('evrak iskeleti: ana evrak kendi kendine bağlanmıyor', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+  const r = U.evrakAgaci(belge, 'D1', 'JETON', 'ceza');
+  // Döngüsel bağ paneli sonsuz ağaca sokar.
+  assert.ok(r.every((e) => e.ana_evrak_ref !== e.uyap_ref), 'kendine referans var');
+});

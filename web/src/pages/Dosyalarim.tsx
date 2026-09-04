@@ -1,5 +1,27 @@
 import { useState } from 'react';
-import { useTablo, trTarih, indirmeBaglantisi } from '../lib/veri';
+import { useTablo, trTarih, indirmeBaglantisi, type Satir } from '../lib/veri';
+
+/**
+ * Evrakları UYAP'taki AĞAÇ SIRASINA dizer: her ana evraktan hemen sonra kendi
+ * ekleri gelir. Düz liste, hangi ekin hangi evrağa ait olduğunu kaybediyordu.
+ */
+function evrakAgaci(satirlar: Satir[]): { satir: Satir; derinlik: number }[] {
+  const sirala = (a: Satir, b: Satir) => (a.sira ?? 0) - (b.sira ?? 0);
+  const kokler = satirlar.filter((e) => !e.ana_evrak_ref).sort(sirala);
+  const cikti: { satir: Satir; derinlik: number }[] = [];
+  for (const kok of kokler) {
+    cikti.push({ satir: kok, derinlik: 0 });
+    for (const ek of satirlar.filter((e) => e.ana_evrak_ref === kok.uyap_ref).sort(sirala)) {
+      cikti.push({ satir: ek, derinlik: 1 });
+    }
+  }
+  // Ana evrağı gelmemiş ekler (ör. sayfalama kesintisi) kaybolmasın.
+  const gosterilen = new Set(cikti.map((x) => x.satir.id));
+  for (const kalan of satirlar.filter((e) => !gosterilen.has(e.id)).sort(sirala)) {
+    cikti.push({ satir: kalan, derinlik: 1 });
+  }
+  return cikti;
+}
 
 /** Dosya listesi + seçilen dosyanın safahatı ve evrakları. */
 export default function Dosyalarim() {
@@ -68,6 +90,7 @@ export default function Dosyalarim() {
           <h3>{dosya.dosya_no} — {dosya.birim}</h3>
           <p className="alt">
             {suz(safahat.satirlar).length} işlem · {evraklar.satirlar.length} evrak
+            {evraklar.satirlar[0]?.klasor ? ` · ${evraklar.satirlar[0].klasor}` : ''}
             {dosya.rol ? ` · Rolünüz: ${dosya.rol}` : ''}
           </p>
 
@@ -95,12 +118,15 @@ export default function Dosyalarim() {
           ) : (
             <div className="sarma">
               <table>
-                <thead><tr><th>Tarih</th><th>Tip</th><th>Gönderen</th><th>Belge</th></tr></thead>
+                <thead><tr><th>Tarih</th><th>Evrak</th><th>Gönderen</th><th>Belge</th></tr></thead>
                 <tbody>
-                  {evraklar.satirlar.map((e) => (
+                  {evrakAgaci(evraklar.satirlar).map(({ satir: e, derinlik }) => (
                     <tr key={e.id}>
                       <td>{trTarih(e.evrak_tarihi)}</td>
-                      <td>{e.evrak_tipi ?? '—'}</td>
+                      <td style={{ paddingLeft: 12 + derinlik * 22 }}>
+                        {derinlik > 0 && <span style={{ color: '#a09a9a' }}>└ </span>}
+                        {e.evrak_tipi ?? '—'}
+                      </td>
                       <td>{e.gonderen ?? '—'}</td>
                       <td>
                         {e.uyap_link ? (
