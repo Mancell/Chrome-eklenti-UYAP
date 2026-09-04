@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTablo, trTarih } from '../lib/veri';
+import { useTablo, trTarih, indirmeBaglantisi } from '../lib/veri';
 
 export default function Evraklar() {
   const { satirlar, yukleniyor, hata } = useTablo('evraklar', { alan: 'evrak_tarihi' });
@@ -21,8 +21,10 @@ export default function Evraklar() {
     <>
       <h2>Evraklar</h2>
       <p className="alt">
-        Çıkarılmış düz metin içinde arayın. PDF evrakların metni bu sürümde
-        çıkarılmıyor — “UYAP'ta aç” ile belgeye gidin.
+        Evraklarınız. <b>Görüntüle</b> belgeyi UYAP'ta açar, <b>İndir</b>
+        bilgisayarınıza kaydeder — ikisi de UYAP oturumunuz açıkken çalışır.
+        Bu sayfa en fazla 1000 evrak listeler; bir dosyanın <i>tüm</i> evrakları
+        için <b>Dosyalarım</b>’dan o dosyaya tıklayın.
       </p>
 
       <input
@@ -47,11 +49,14 @@ export default function Evraklar() {
                   <td>{e.evrak_tipi ?? '—'}</td>
                   <td>{e.gonderen ?? '—'}</td>
                   <td>
-                    {e.metin
-                      ? e.metin.slice(0, 220) + (e.metin.length > 220 ? '…' : '')
-                      : e.uyap_link
-                        ? <a href={e.uyap_link} target="_blank" rel="noreferrer noopener">UYAP'ta aç ↗</a>
-                        : 'metin çıkarılamadı'}
+                    {e.uyap_link ? (
+                      <>
+                        <a href={e.uyap_link} target="_blank" rel="noreferrer noopener">Görüntüle ↗</a>
+                        {' · '}
+                        <a href={indirmeBaglantisi(e.uyap_link) ?? '#'}
+                           target="_blank" rel="noreferrer noopener">İndir ↓</a>
+                      </>
+                    ) : '—'}
                   </td>
                 </tr>
               ))}

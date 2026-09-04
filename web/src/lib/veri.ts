@@ -7,7 +7,14 @@ export type Satir = Record<string, any>;
  * Bir tabloyu çeker ve realtime dinler — senkron sürerken panel kendiliğinden
  * dolsun diye. Beş sayfa da bunu kullanıyor; sayfa başına ayrı fetch yazılmıyor.
  */
-export function useTablo(tablo: string, sirala?: { alan: string; artan?: boolean }) {
+export function useTablo(
+  tablo: string,
+  sirala?: { alan: string; artan?: boolean },
+  // Filtre ŞART olabilir: PostgREST varsayılanı 1000 satır döndürüyor ve
+  // 4363 evrakın çoğu panele hiç gelmiyordu. Dosya bazlı sorgu hem limiti
+  // aşıyor hem gereksiz veri çekmiyor.
+  filtre?: { alan: string; deger: string | null } | null,
+) {
   const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
@@ -17,6 +24,10 @@ export function useTablo(tablo: string, sirala?: { alan: string; artan?: boolean
 
     async function cek() {
       let s = supabase.from(tablo).select('*');
+      if (filtre) {
+        if (!filtre.deger) { setSatirlar([]); setYukleniyor(false); return; }
+        s = s.eq(filtre.alan, filtre.deger);
+      }
       if (sirala) s = s.order(sirala.alan, { ascending: sirala.artan ?? false, nullsFirst: false });
       const { data, error } = await s;
       if (iptal) return;
@@ -36,7 +47,7 @@ export function useTablo(tablo: string, sirala?: { alan: string; artan?: boolean
       supabase.removeChannel(kanal);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tablo, sirala?.alan, sirala?.artan]);
+  }, [tablo, sirala?.alan, sirala?.artan, filtre?.alan, filtre?.deger]);
 
   return { satirlar, yukleniyor, hata };
 }
@@ -73,4 +84,16 @@ export function gecenSure(iso: string | null | undefined): string {
   const sa = Math.floor(dk / 60);
   if (sa < 24) return `${sa} sa önce`;
   return trTarih(iso);
+}
+
+/**
+ * Evrak İNDİRME bağlantısı. UYAP'ta görüntüleme ve indirme aynı parametreleri
+ * alır, yalnız uç adı değişir (view → download); indirme uçu belgeyi ek olarak
+ * gönderiyor. Bağlantı eklentide kuruluyor, panel yalnız ucu değiştiriyor.
+ */
+export function indirmeBaglantisi(uyapLink: string | null | undefined): string | null {
+  if (!uyapLink) return null;
+  return uyapLink.includes('/view_document_brd.uyap')
+    ? uyapLink.replace('/view_document_brd.uyap', '/download_document_brd.uyap')
+    : uyapLink;
 }

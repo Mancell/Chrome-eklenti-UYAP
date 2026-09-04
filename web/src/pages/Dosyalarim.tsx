@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { useTablo, trTarih } from '../lib/veri';
+import { useTablo, trTarih, indirmeBaglantisi } from '../lib/veri';
 
 /** Dosya listesi + seçilen dosyanın safahatı ve evrakları. */
 export default function Dosyalarim() {
   const dosyalar = useTablo('dosyalar', { alan: 'acilis_tarihi' });
   const safahat = useTablo('safahat', { alan: 'tarih' });
-  const evraklar = useTablo('evraklar', { alan: 'evrak_tarihi' });
   const [secili, setSecili] = useState<string | null>(null);
+  // Seçili dosyanın evrakları: tüm tabloyu çekip filtrelemek 1000 satır
+  // limitine takılıyordu (4363 evrak var), bazı dosyalar boş görünüyordu.
+  const evraklar = useTablo('evraklar', { alan: 'evrak_tarihi' },
+    { alan: 'dosya_id', deger: secili });
 
   const dosya = dosyalar.satirlar.find((d) => d.id === secili);
   const suz = (r: any[]) => r.filter((x) => x.dosya_id === secili);
@@ -64,7 +67,7 @@ export default function Dosyalarim() {
         <div style={{ marginTop: 26 }}>
           <h3>{dosya.dosya_no} — {dosya.birim}</h3>
           <p className="alt">
-            {suz(safahat.satirlar).length} işlem · {suz(evraklar.satirlar).length} evrak
+            {suz(safahat.satirlar).length} işlem · {evraklar.satirlar.length} evrak
             {dosya.rol ? ` · Rolünüz: ${dosya.rol}` : ''}
           </p>
 
@@ -87,24 +90,27 @@ export default function Dosyalarim() {
           )}
 
           <h4 style={{ marginTop: 20 }}>Evraklar</h4>
-          {suz(evraklar.satirlar).length === 0 ? (
+          {evraklar.satirlar.length === 0 ? (
             <p className="alt">Bu dosyada evrak bulunamadı.</p>
           ) : (
             <div className="sarma">
               <table>
-                <thead><tr><th>Tarih</th><th>Tip</th><th>Gönderen</th><th>Metin</th></tr></thead>
+                <thead><tr><th>Tarih</th><th>Tip</th><th>Gönderen</th><th>Belge</th></tr></thead>
                 <tbody>
-                  {suz(evraklar.satirlar).map((e) => (
+                  {evraklar.satirlar.map((e) => (
                     <tr key={e.id}>
                       <td>{trTarih(e.evrak_tarihi)}</td>
                       <td>{e.evrak_tipi ?? '—'}</td>
                       <td>{e.gonderen ?? '—'}</td>
                       <td>
-                        {e.metin
-                          ? e.metin.slice(0, 160) + (e.metin.length > 160 ? '…' : '')
-                          : e.uyap_link
-                            ? <a href={e.uyap_link} target="_blank" rel="noreferrer noopener">UYAP'ta aç ↗</a>
-                            : 'metin çıkarılamadı'}
+                        {e.uyap_link ? (
+                          <>
+                            <a href={e.uyap_link} target="_blank" rel="noreferrer noopener">Görüntüle ↗</a>
+                            {' · '}
+                            <a href={indirmeBaglantisi(e.uyap_link) ?? '#'}
+                               target="_blank" rel="noreferrer noopener">İndir ↓</a>
+                          </>
+                        ) : '—'}
                       </td>
                     </tr>
                   ))}
