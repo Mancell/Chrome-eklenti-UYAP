@@ -236,7 +236,9 @@ async function _senkron(cfg) {
       // Dosya bu sekmeyi desteklemiyorsa ÇAĞIRMA — hata değil, o veri yok.
       if (!destekli(IZIN_ADI[tip])) { desteksiz[tip] = (desteksiz[tip] ?? 0) + 1; continue; }
       try {
-        const { veri, tani } = await sor(sekme.id, { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref });
+        // yargi_turu link kurulumunda lazım (yargiTuru parametresi).
+        const { veri, tani } = await sor(sekme.id,
+          { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref, yargiTuru: d.yargi_turu });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
         // 0 evrak geldiyse SEBEBİ kaydet: yanıt boş mu (sunucu vermedi) yoksa
         // dolu ama ayrıştırılamadı mı? Kör tur bir daha olmasın.
@@ -259,7 +261,8 @@ async function _senkron(cfg) {
       // Evrak JETONU ile (uyap_ref içerik hash'i, UYAP onu tanımaz). Jetonsuz evrak
       // indirilemez — künye + link olarak yazılır.
       if (!e._evrakJeton) continue;
-      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e._evrakJeton, jeton: e._jeton });
+      const { base64 } = await sor(sekme.id,
+        { tip: 'evrak-indir', evrakRef: e._evrakJeton, jeton: e._jeton, yargiTuru: e._yargiTuru });
       const ikili = atob(base64);
       const bayt = new Uint8Array(ikili.length);
       for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i);
@@ -277,7 +280,7 @@ async function _senkron(cfg) {
   // gönderiliyor ve her senkronda "Bilinmeyen istek." hatası üretiliyordu.
 
   for (const d of dosyalar) delete d._dosyaId;   // jeton panele yazılmaz
-  for (const e of paket.evraklar) { delete e._jeton; delete e._evrakJeton; }
+  for (const e of paket.evraklar) { delete e._jeton; delete e._evrakJeton; delete e._yargiTuru; }
   bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
   const sonuc = await rpc(cfg, paket);
   const ozet = `${paket.dosyalar.length} dosya, ${paket.safahat.length} safahat, ${paket.evraklar.length} evrak`;

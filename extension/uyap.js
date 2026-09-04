@@ -24,6 +24,9 @@ const TABAN = location.origin;
 // GÖVDELER form-urlencoded, JSON DEĞİL.
 // YANITLAR karışık: dosya listesi XML, taraf/evrak HTML parçası.
 const YOL = '/main/jsp/vatandas/';
+// Belge uçları /main/jsp/ altında — `vatandas/` YOK. Kullanıcının paylaştığı
+// çalışan URL bunu gösteriyor; ajx uçlarıyla aynı sanmak hataydı.
+const BELGE_YOL = '/main/jsp/';
 
 const UCLAR = {
   dosyaListesi: { yol: YOL + 'vatandas_dosyalari_sorgula.ajx', bicim: 'xml' },
@@ -35,12 +38,16 @@ const UCLAR = {
   // çağrıda yanılırsak `bicim` düzeltilecek.
   safahat:      { yol: YOL + 'dosya_safahat_bilgileri_brd.ajx', bicim: 'html' },
   // Evrak baytı — kökte, portal geneli (avukat portalıyla ortak).
-  evrakIndir:   { yol: '/download_document_brd.uyap', bicim: 'bayt', metod: 'GET' },
+  evrakIndir:   { yol: BELGE_YOL + 'download_document_brd.uyap', bicim: 'bayt', metod: 'GET' },
 
   // ⛔ Vatandaş portalında ayrı bir duruşma ucu görülmedi. Duruşma bilgisi
   // safahat içinde geliyor olabilir; ilk gerçek safahat yanıtında bakılacak.
   durusmalar: null,
 };
+
+// Yalnız doğrulanmış eşleme (kullanıcının paylaştığı çalışan URL: Ceza → 1).
+// Diğer yargı türlerinin kodu bilinmiyor; eklenmeden gönderilmiyor.
+const YARGI_TURU_KOD = { ceza: 1 };
 
 const EKSIK_ADLAR = {
   dosyaListesi: 'Dosyalarım listesi',
@@ -528,7 +535,32 @@ async function durusmalar(jeton) {
  *       &lt;div&gt;Gönderen Yer/Kişi: …&lt;/div&gt;…">
  * Klasör düğümleri (span.folder, "Dosyaya Eklenen Son 20 Evrak") atlanır.
  */
-function evrakAgaci(belge, dosyaRef, jeton) {
+/**
+ * Evrak görüntüleme/indirme URL'i. Biçim kullanıcının PAYLAŞTIĞI ÇALIŞAN
+ * bağlantıdan alındı:
+ *   /main/jsp/view_document_brd.uyap?mimeType=Pdf&evrakId=…&dosyaId=…&yargiTuru=1
+ *
+ * Önceki hâli üç noktada yanlıştı: kök yol (/view_document_brd.uyap),
+ * mimeType yok, yargiTuru yok. Görüntüleme ve indirme TEK YERDEN kuruluyor ki
+ * biri düzelip diğeri unutulmasın.
+ */
+function belgeUrl(tur, evrakJeton, dosyaJeton, yargiTuruAdi) {
+  if (!evrakJeton) return null;
+  const q = new URLSearchParams({
+    mimeType: 'Pdf',
+    evrakId: evrakJeton,
+    dosyaId: dosyaJeton || '',
+  });
+  // Yalnız DOĞRULANMIŞ eşleme gönderiliyor (kullanıcının çalışan URL'i: ceza→1).
+  // Diğer türlerin kodu bilinmiyor; yanlış değer yollamaktansa parametreyi hiç
+  // göndermiyoruz — sunucu varsayılanını kullanır.
+  const kod = YARGI_TURU_KOD[yargiTuruAdi];
+  if (kod) q.set('yargiTuru', String(kod));
+  const yol = tur === 'indir' ? 'download_document_brd.uyap' : 'view_document_brd.uyap';
+  return `${TABAN}${BELGE_YOL}${yol}?${q}`;
+}
+
+function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
   // tagName HTML belgede BÜYÜK HARF ('SPAN'), XML/test ortamında küçük. Her
   // karşılaştırma toLowerCase() ile — "test yeşil, tarayıcı boş" hatası buradan
   // çıktı ve 0 evrak verdi.
@@ -587,14 +619,13 @@ function evrakAgaci(belge, dosyaRef, jeton) {
       dosya_ref: dosyaRef,
       _jeton: jeton,             // dosya jetonu (indirme sorgusu için)
       _evrakJeton: evrakJeton,   // evrak jetonu (indirme/görüntüleme). Panele YAZILMAZ.
+      _yargiTuru: yargiTuruAdi,  // indirme URL'i için. Panele YAZILMAZ.
       evrak_tipi: ad,
       evrak_tarihi: evrakTarihi,
       gonderen: temizle(detay['Gönderen Yer/Kişi'] || detay['Gönderen']),
       metin: null,               // PDF/UDF içeriği ayrı iş
       // Görüntüleme linki evrak JETONU + dosya JETONU ister (içerik-ref değil).
-      uyap_link: evrakJeton
-        ? `${TABAN}/view_document_brd.uyap?${new URLSearchParams({ evrakId: evrakJeton, dosyaId: jeton || '' })}`
-        : null,
+      uyap_link: belgeUrl('goruntule', evrakJeton, jeton, yargiTuruAdi),
     });
   }
   return cikti;
@@ -613,7 +644,7 @@ function titleAlanlari(ham) {
   return alanlar;
 }
 
-async function evrakListesi(jeton, dosyaRef) {
+async function evrakListesi(jeton, dosyaRef, yargiTuruAdi) {
   const hepsi = [];
   const gorulen = new Set();
   let toplamSayfa = 1;
@@ -636,7 +667,7 @@ async function evrakListesi(jeton, dosyaRef) {
       // düğüm bulundu. Panele YAZILMAZ, yalnız senkron özetinde görünür.
       tani = { bayt: metin.length, dugum: belge.getElementsByTagName('li').length };
     }
-    for (const e of evrakAgaci(belge, dosyaRef, jeton)) {
+    for (const e of evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi)) {
       if (gorulen.has(e.uyap_ref)) continue;   // sayfalar arası tekrar
       gorulen.add(e.uyap_ref);
       hepsi.push(e);
@@ -693,10 +724,11 @@ async function taraflar(jeton) {
 }
 
 /** Evrak baytı → base64. Metin ÇIKARILMAZ burada (background yapar). */
-async function evrakIndir(evrakRef, jeton) {
-  // URLSearchParams şart: jeton base64 olduğu için `+` ve `/` içeriyor.
-  const q = new URLSearchParams({ evrakId: evrakRef, dosyaId: jeton ?? '' });
-  const y = await fetch(`${TABAN}${UCLAR.evrakIndir.yol}?${q}`, {
+async function evrakIndir(evrakRef, jeton, yargiTuruAdi) {
+  // Görüntüleme ile AYNI URL kurucusu — biri düzelip diğeri unutulmasın.
+  const url = belgeUrl('indir', evrakRef, jeton, yargiTuruAdi);
+  if (!url) throw new Error('Evrak jetonu yok, indirilemez.');
+  const y = await fetch(url, {
     credentials: 'include',
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
   });
@@ -767,7 +799,7 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'evrak-listesi': {
           // JETON + kalıcı ref AYRI: UYAP jetonu ister, dosya_ref kalıcı kimlik.
           // Eskiden tek argümanla dosyaRef (içerik-hash) gidiyordu → UYAP tanımaz.
-          const liste = await evrakListesi(istek.jeton, istek.dosyaRef);
+          const liste = await evrakListesi(istek.jeton, istek.dosyaRef, istek.yargiTuru);
           // _tani dizi özelliği; mesajda ayrı alan olmalı yoksa kaybolur.
           return yanitla({ veri: liste, tani: liste._tani ?? null });
         }
@@ -777,7 +809,7 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         // Dosyayı oturumda aktif eder; alt uçlardan ÖNCE çağrılmalı.
         case 'dosya-ac':      return yanitla({ izinler: await dosyaAc(istek.jeton) });
         // evrakIndir(evrakJetonu, dosyaJetonu) — ikisi de JETON, ref değil.
-        case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.jeton) });
+        case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.jeton, istek.yargiTuru) });
         case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
         // Hangi uçlar biliniyor? Background bunu bir kez sorup bilinmeyenleri
         // HİÇ çağırmıyor — yoksa her dosya için patlayan bir istek + 800 ms

@@ -51,7 +51,7 @@ function yukle() {
     '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
     '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu,' +
     '   tablodanSatirlar, htmlBelge, satirlara, temizle, normalizeDurum, tarafMetni,' +
-    '   jetonTemizle, yargiTuruDenBirim, evrakAgaci, titleAlanlari, dosyaAc, cagir })', g);
+    '   jetonTemizle, yargiTuruDenBirim, evrakAgaci, titleAlanlari, dosyaAc, cagir, belgeUrl })', g);
 }
 
 const U = yukle();
@@ -139,7 +139,8 @@ test('gerçek uçlar keşif kaydındaki YOLLARLA duruyor', () => {
   assert.equal(U.UCLAR.dosyaListesi.yol, '/main/jsp/vatandas/vatandas_dosyalari_sorgula.ajx');
   assert.equal(U.UCLAR.taraflar.yol, '/main/jsp/vatandas/dosya_taraf_bilgileri_brd.ajx');
   assert.equal(U.UCLAR.evrakListesi.yol, '/main/jsp/vatandas/dosya_evrak_bilgileri_brd.ajx');
-  assert.equal(U.UCLAR.evrakIndir.yol, '/download_document_brd.uyap', 'evrak baytı portal geneli');
+  assert.equal(U.UCLAR.evrakIndir.yol, '/main/jsp/download_document_brd.uyap',
+    'belge uçları /main/jsp/ altında — vatandas/ YOK');
   assert.equal(U.UCLAR.evrakIndir.metod, 'GET');
 });
 
@@ -620,4 +621,51 @@ test('evrakListesi: İLK sayfa pageNumber GÖNDERMEZ', () => {
   const f = src.slice(src.indexOf('async function evrakListesi'), src.indexOf('async function taraflar'));
   assert.match(f, /sayfa === 1\s*\?\s*\{\s*dosyaId:\s*jeton\s*\}/,
     'ilk sayfa gövdesi yalnız dosyaId olmalı');
+});
+
+// ---------------------------------------------------------------------------
+// Belge URL'i — biçim kullanıcının PAYLAŞTIĞI ÇALIŞAN bağlantıdan alındı:
+//   /main/jsp/view_document_brd.uyap?mimeType=Pdf&evrakId=…&dosyaId=…&yargiTuru=1
+// Önceki hâli üç noktada yanlıştı (kök yol, mimeType yok, yargiTuru yok).
+// ---------------------------------------------------------------------------
+test('belgeUrl: gerçek çalışan URL biçimini üretiyor', () => {
+  const url = U.belgeUrl('goruntule', 'hZBUzwMtgyH4xtFa+1tv0@', '@Eu3u0X7@9xef+dObQV', 'ceza');
+  assert.ok(url.startsWith('https://vatandas.uyap.gov.tr/main/jsp/view_document_brd.uyap?'),
+    'yol /main/jsp/ altında olmalı: ' + url);
+  const q = new URL(url).searchParams;
+  assert.equal(q.get('mimeType'), 'Pdf');
+  assert.equal(q.get('evrakId'), 'hZBUzwMtgyH4xtFa+1tv0@', 'jeton bozulmadan geri okunmalı');
+  assert.equal(q.get('dosyaId'), '@Eu3u0X7@9xef+dObQV');
+  assert.equal(q.get('yargiTuru'), '1', 'ceza → 1 (doğrulanmış eşleme)');
+  // Jetondaki özel karakterler kaçışlanmış olmalı (ham + / @ URL'i bozar).
+  assert.ok(url.includes('%40') && url.includes('%2B'), 'kaçış yok: ' + url);
+});
+
+test('belgeUrl: bilinmeyen yargı türünde parametre GÖNDERİLMEZ', () => {
+  // Yanlış kod yollamaktansa eksik yolla — sunucu varsayılanını kullanır.
+  const url = U.belgeUrl('goruntule', 'JETON', 'DJETON', 'hukuk');
+  assert.equal(new URL(url).searchParams.get('yargiTuru'), null);
+  assert.equal(new URL(U.belgeUrl('goruntule', 'J', 'D', null)).searchParams.get('yargiTuru'), null);
+});
+
+test('belgeUrl: indirme aynı kurucuyu kullanıyor', () => {
+  const url = U.belgeUrl('indir', 'JETON', 'DJETON', 'ceza');
+  assert.ok(url.includes('/main/jsp/download_document_brd.uyap?'), url);
+  assert.equal(new URL(url).searchParams.get('mimeType'), 'Pdf');
+});
+
+test('belgeUrl: jeton yoksa null (indirme denenmesin)', () => {
+  assert.equal(U.belgeUrl('goruntule', null, 'D', 'ceza'), null);
+});
+
+test('gerçek ağaçtan üretilen uyap_link çalışan biçimde', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+  const r = U.evrakAgaci(belge, 'DOSYA-REF', '@Eu3u0X7@9xef', 'ceza');
+  const ana = r.find((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı');
+  assert.ok(ana.uyap_link.includes('/main/jsp/view_document_brd.uyap?'), ana.uyap_link);
+  const q = new URL(ana.uyap_link).searchParams;
+  assert.equal(q.get('mimeType'), 'Pdf');
+  assert.equal(q.get('yargiTuru'), '1');
+  assert.ok(q.get('evrakId'), 'evrakId dolu olmalı');
 });
