@@ -192,9 +192,12 @@ async function _senkron(cfg) {
   // UYAP'ın izin listesindeki adlar (islem_turleri yanıtı).
   const IZIN_ADI = { safahat: 'safahat_bilgileri', 'evrak-listesi': 'evrak_bilgileri', durusmalar: 'durusma_bilgileri' };
   const desteksiz = {};   // "3 dosyada safahat yok" bilgisi — hata değil
-  const cekilecek = ['safahat', 'durusmalar', 'evrak-listesi']
+  const evrakTani = [];   // 0 evrak gelirse teşhis (yanıt boyutu/düğüm)
+  // Safahat bu turda KAPSAM DIŞI (kullanıcı kararı): bir dosyada UYAP zaten
+  // desteklemiyor, diğerinde nosession ısrar ediyordu. Odak evrakta.
+  const cekilecek = ['evrak-listesi']
     .filter((t) => yetenek[UC_ADI[t]] !== false);
-  const atlanan = ['safahat', 'durusmalar', 'evrak-listesi'].filter((t) => !cekilecek.includes(t));
+  const atlanan = [];   // safahat/duruşma bilinçli kapsam dışı, 'atlandı' gürültüsü üretme
 
   const hatalar = [];   // yutulmayacak: senkron sonunda panele yazılır
   for (const [i, d] of dosyalar.entries()) {
@@ -233,8 +236,13 @@ async function _senkron(cfg) {
       // Dosya bu sekmeyi desteklemiyorsa ÇAĞIRMA — hata değil, o veri yok.
       if (!destekli(IZIN_ADI[tip])) { desteksiz[tip] = (desteksiz[tip] ?? 0) + 1; continue; }
       try {
-        const { veri } = await sor(sekme.id, { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref });
+        const { veri, tani } = await sor(sekme.id, { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
+        // 0 evrak geldiyse SEBEBİ kaydet: yanıt boş mu (sunucu vermedi) yoksa
+        // dolu ama ayrıştırılamadı mı? Kör tur bir daha olmasın.
+        if (tip === 'evrak-listesi' && !veri.length && tani) {
+          evrakTani.push(`${d.dosya_no ?? '?'}: ${Math.round(tani.bayt / 1024)}KB/${tani.dugum} düğüm`);
+        }
       } catch (e) {
         // Tek dosyanın safahatı düşmesin AMA sessizce yutulmasın: topla, sonunda
         // panele yaz. "0 geliyor" bir daha görünmez kalmayacak.
@@ -283,7 +291,8 @@ async function _senkron(cfg) {
     : '';
   // Desteklenmeyen sekme HATA DEĞİL, bilgi: "3 dosyada safahat yok".
   const bilgi = desteksizMesaj ? ` · ${desteksizMesaj}` : '';
-  await durumBildir(cfg, 'bitti', ozet + bilgi + hataOzeti, paket.dosyalar.length,
+  const taniMesaj = evrakTani.length ? ` · evrak boş [${evrakTani.slice(0, 2).join(', ')}]` : '';
+  await durumBildir(cfg, 'bitti', ozet + bilgi + taniMesaj + hataOzeti, paket.dosyalar.length,
     paket.dosyalar.length, paket.dosyalar.length);
   if (atlanan.length) sonuc._atlanan = atlanan.join(', ');
   // `_yol` panele YAZILMIYOR; yalnız popup'ta gösteriliyor.

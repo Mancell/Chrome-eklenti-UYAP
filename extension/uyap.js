@@ -617,19 +617,32 @@ async function evrakListesi(jeton, dosyaRef) {
   const hepsi = [];
   const gorulen = new Set();
   let toplamSayfa = 1;
+  let tani = null;
 
   for (let sayfa = 1; sayfa <= toplamSayfa && sayfa <= 20; sayfa++) {
-    const metin = await cagir('evrakListesi', { dosyaId: jeton, pageNumber: String(sayfa) });
+    // İLK çağrıda pageNumber GÖNDERİLMEZ. UYAP'ın kendi isteği de öyle
+    // (keşif #3/#4/#5: gövde yalnız `dosyaId=…`); pageNumber sunucuda ancak
+    // sayfa DEĞİŞTİRME için anlamlı ve ilk sayfada gönderilince boş liste
+    // dönüyordu — "0 evrak"ın sebebi buydu.
+    const govde = sayfa === 1 ? { dosyaId: jeton } : { dosyaId: jeton, pageNumber: String(sayfa) };
+    const metin = await cagir('evrakListesi', govde);
     if (sayfa === 1) {
       const m = /var\s+pageTotal\s*=\s*(\d+)/.exec(metin);
       if (m) toplamSayfa = Math.max(1, parseInt(m[1], 10));
     }
-    for (const e of evrakAgaci(htmlBelge(metin), dosyaRef, jeton)) {
+    const belge = htmlBelge(metin);
+    if (sayfa === 1) {
+      // Boş-yanıt ile parser-hatasını ayırt etmek için: kaç bayt geldi, kaç
+      // düğüm bulundu. Panele YAZILMAZ, yalnız senkron özetinde görünür.
+      tani = { bayt: metin.length, dugum: belge.getElementsByTagName('li').length };
+    }
+    for (const e of evrakAgaci(belge, dosyaRef, jeton)) {
       if (gorulen.has(e.uyap_ref)) continue;   // sayfalar arası tekrar
       gorulen.add(e.uyap_ref);
       hepsi.push(e);
     }
   }
+  if (tani) hepsi._tani = tani;   // dizi üzerinde taşınır, satır değil
   return hepsi;
 }
 
@@ -749,15 +762,22 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
     try {
       switch (istek.tip) {
         case 'dosyalar':      return yanitla({ veri: await dosyalar() });
-        case 'safahat':       return yanitla({ veri: await safahat(istek.dosyaRef) });
+        case 'safahat':       return yanitla({ veri: await safahat(istek.jeton, istek.dosyaRef) });
         case 'durusmalar':    return yanitla({ veri: await durusmalar(istek.dosyaRef) });
-        case 'evrak-listesi': return yanitla({ veri: await evrakListesi(istek.dosyaRef) });
+        case 'evrak-listesi': {
+          // JETON + kalıcı ref AYRI: UYAP jetonu ister, dosya_ref kalıcı kimlik.
+          // Eskiden tek argümanla dosyaRef (içerik-hash) gidiyordu → UYAP tanımaz.
+          const liste = await evrakListesi(istek.jeton, istek.dosyaRef);
+          // _tani dizi özelliği; mesajda ayrı alan olmalı yoksa kaybolur.
+          return yanitla({ veri: liste, tani: liste._tani ?? null });
+        }
         // JETON şart: dosyaRef içerik-hash'i, UYAP onu tanımaz.
         case 'taraflar':      return yanitla({ veri: await taraflar(istek.jeton) });
         case 'taraf-metni':   return yanitla({ metin: tarafMetni(await taraflar(istek.jeton)) });
         // Dosyayı oturumda aktif eder; alt uçlardan ÖNCE çağrılmalı.
         case 'dosya-ac':      return yanitla({ izinler: await dosyaAc(istek.jeton) });
-        case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.dosyaRef) });
+        // evrakIndir(evrakJetonu, dosyaJetonu) — ikisi de JETON, ref değil.
+        case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.jeton) });
         case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
         // Hangi uçlar biliniyor? Background bunu bir kez sorup bilinmeyenleri
         // HİÇ çağırmıyor — yoksa her dosya için patlayan bir istek + 800 ms

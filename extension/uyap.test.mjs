@@ -560,3 +560,64 @@ test('dosyaAc: boş/şekilsiz yanıt boş dizi, çökme yok', () => {
   assert.deepEqual(izinleriAyristir('<root><HashMap></HashMap></root>'), []);
   assert.deepEqual(izinleriAyristir('<root><HashMap><Entry><String>  </String></Entry></HashMap></root>'), []);
 });
+
+// ---------------------------------------------------------------------------
+// UYAP'a giden her mesaj JETON almalı — `dosyaRef` içerik hash'idir, UYAP onu
+// TANIMAZ. Bu hata üç ayrı satırda sessizce yaşadı (taraflar, evrak-listesi,
+// evrak-indir) ve hepsi "boş sonuç" olarak göründü. Statik kontrol kapatıyor.
+// ---------------------------------------------------------------------------
+test('UYAP çağrısı yapan mesajlar istek.jeton kullanıyor', () => {
+  const src = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
+  const govde = src.slice(src.indexOf('switch (istek.tip)'), src.indexOf('default:'));
+  // Bu mesajlar UYAP'a HTTP çağrısı yapar; hepsi jeton almalı.
+  for (const tip of ['safahat', 'evrak-listesi', 'taraflar', 'taraf-metni', 'dosya-ac', 'evrak-indir']) {
+    const i = govde.indexOf(`case '${tip}'`);
+    assert.ok(i >= 0, `${tip} mesajı yok`);
+    const blok = govde.slice(i, i + 320);
+    assert.ok(blok.includes('istek.jeton'),
+      `${tip} istek.jeton kullanmıyor — UYAP içerik-hash'i tanımaz`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GERÇEK UYAP HTML'i — parser'ın gerçek çıktıda çalıştığının ilk kanıtı.
+//
+// xmldom HTML5 parser DEĞİL: gerçek yanıttaki bozuk attribute'ta
+// (`<ul id="" + anaDosyaBilgisi + "">` — JS string birleştirmesi HTML'e sızmış)
+// patlıyor ve Chrome'un BÜYÜK HARF tagName davranışını taklit etmiyor. tagName
+// hatası tam bu yüzden kaçmıştı. linkedom Chrome gibi davranır.
+// ---------------------------------------------------------------------------
+import { parseHTML } from 'linkedom';
+
+test('evrakAgaci: GERÇEK UYAP evrak ağacını ayrıştırıyor', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+
+  // Chrome gibi: bozuk attribute çökertmemeli, tagName BÜYÜK HARF olmalı.
+  assert.equal(belge.querySelector('li[data-sid]').tagName, 'LI');
+
+  const r = U.evrakAgaci(belge, 'DOSYA-REF', 'DJETON');
+  assert.ok(r.length >= 7, `gerçek ağaçtan ≥7 evrak bekleniyor, ${r.length} çıktı`);
+
+  const ana = r.find((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı');
+  assert.ok(ana, 'ana evrak yok: ' + r.map((e) => e.evrak_tipi).join(' | '));
+  assert.equal(ana.evrak_tarihi, '2026-07-01');
+  assert.ok(ana._evrakJeton && !ana._evrakJeton.includes('"'), 'jeton tırnaksız olmalı');
+
+  // Ekler ana evrağın adını miras alıyor.
+  assert.ok(r.some((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı — Ek 6'),
+    'Ek 6 yok');
+
+  // Tüm ref'ler benzersiz (ekler tek satıra çökmüyor).
+  const refler = r.map((e) => e.uyap_ref);
+  assert.equal(new Set(refler).size, refler.length, 'ref çakışması');
+});
+
+test('evrakListesi: İLK sayfa pageNumber GÖNDERMEZ', () => {
+  // UYAP'ın kendi isteği yalnız `dosyaId=…`; pageNumber=1 gönderilince sunucu
+  // boş liste dönüyordu — "0 evrak"ın kök nedeni.
+  const src = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
+  const f = src.slice(src.indexOf('async function evrakListesi'), src.indexOf('async function taraflar'));
+  assert.match(f, /sayfa === 1\s*\?\s*\{\s*dosyaId:\s*jeton\s*\}/,
+    'ilk sayfa gövdesi yalnız dosyaId olmalı');
+});
