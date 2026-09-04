@@ -51,7 +51,7 @@ function yukle() {
     '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
     '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu,' +
     '   tablodanSatirlar, htmlBelge, satirlara, temizle, normalizeDurum, tarafMetni,' +
-    '   jetonTemizle, yargiTuruDenBirim })', g);
+    '   jetonTemizle, yargiTuruDenBirim, evrakAgaci, titleAlanlari })', g);
 }
 
 const U = yukle();
@@ -419,4 +419,58 @@ test('yargiTuruDenBirim: birim adından çıkarım (ad alanı gelmiyor)', () => 
   assert.equal(U.yargiTuruDenBirim('Bölge İdare Mahkemesi'), 'idari');
   assert.equal(U.yargiTuruDenBirim('Belirsiz Birim'), null, 'tanınmayan → null, uydurmuyoruz');
   assert.equal(U.yargiTuruDenBirim(''), null);
+});
+
+// ---------------------------------------------------------------------------
+// Evrak AĞACI (treeview) — UYAP evrak listesini tablo değil, jsTree olarak
+// veriyor. Parser'ım tablo arıyordu → 0 evrak. Gerçek yapıya birebir uygun
+// (keşif #3'ten): li[data-sid='ad tarih'] + span.file title="<div>K: V</div>".
+// ---------------------------------------------------------------------------
+const EVRAK_AGACI = `<div id="browser" class="filetree treeview-gray">
+  <li><span class="folder">İstanbul 24. Ağır Ceza Mahkemesi 2025/404</span>
+    <ul>
+      <li class="closed"><span class="folder" style="color:red">Dosyaya Eklenen Son 20 Evrak</span>
+        <ul>
+          <li data-sid='İstinafa Evrak Gönderme Üst Yazısı 25/06/2026'>
+            <span class="file" data-html="true" title="&lt;div&gt;Birim Evrak No: 10570&lt;/div&gt;&lt;div&gt;Evrakın Onaylandığı Tarih: 25/06/2026&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: İstanbul 24. Ağır Ceza Mahkemesi&lt;/div&gt;">İstinafa Evrak Gönderme Üst Yazısı</span>
+          </li>
+          <li data-sid='Taranmış Evraklar 20/06/2026'>
+            <span class="file" title="&lt;div&gt;Birim Evrak No: 10571&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: Bilirkişi&lt;/div&gt;">Taranmış Evraklar</span>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+</div>`;
+
+test('evrakAgaci: treeview düğümlerinden evrak çıkarıyor', () => {
+  const r = sade(U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'JETON-1'));
+  assert.equal(r.length, 2, 'iki evrak (klasör düğümleri atlanmalı)');
+
+  assert.equal(r[0].evrak_tipi, 'İstinafa Evrak Gönderme Üst Yazısı');
+  assert.equal(r[0].evrak_tarihi, '2026-06-25', 'data-sid sonundaki tarih ISO');
+  assert.equal(r[0].gonderen, 'İstanbul 24. Ağır Ceza Mahkemesi', 'title’dan gönderen');
+  assert.equal(r[0].uyap_ref, '10570', 'Birim Evrak No kalıcı kimlik');
+  assert.ok(r[0].uyap_link.includes('evrakId=10570'), 'UYAP linki evrak No ile');
+  assert.equal(r[0].metin, null, 'metin ayrı iş');
+});
+
+test('evrakAgaci: klasör düğümleri (span.folder) atlanıyor', () => {
+  const r = U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'D', 'J');
+  // "Dosyaya Eklenen Son 20 Evrak" bir klasör; evrak sayılmamalı.
+  assert.ok(!r.some((e) => e.evrak_tipi && e.evrak_tipi.includes('Son 20 Evrak')));
+});
+
+test('titleAlanlari: HTML-encoded div’leri anahtar/değere çözüyor', () => {
+  const d = U.titleAlanlari('&lt;div&gt;Birim Evrak No: 10570&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: X&lt;/div&gt;');
+  assert.equal(d['Birim Evrak No'], '10570');
+  assert.equal(d['Gönderen Yer/Kişi'], 'X');
+});
+
+test('evrakAgaci: Birim Evrak No yoksa ref() üretiliyor (idempotent)', () => {
+  const html = `<ul><li data-sid='İsimsiz Evrak 01/01/2026'><span class="file" title="&lt;div&gt;Gönderen Yer/Kişi: Y&lt;/div&gt;">İsimsiz</span></li></ul>`;
+  const a = sade(U.evrakAgaci(U.htmlBelge(html), 'D', 'J'));
+  const b = sade(U.evrakAgaci(U.htmlBelge(html), 'D', 'J'));
+  assert.equal(a[0].uyap_ref, b[0].uyap_ref, 'aynı evrak aynı ref');
+  assert.ok(a[0].uyap_ref, 'ref boş değil');
 });

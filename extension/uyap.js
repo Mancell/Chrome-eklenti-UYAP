@@ -502,11 +502,11 @@ async function dosyalar() {
 // uyap_ref'i, RPC bunu dosya_id'ye çözecek. İkisi artık farklı değer.
 async function safahat(jeton, dosyaRef) {
   return satirlara('safahat', await cagir('safahat', { dosyaId: jeton })).map((s) => ({
-    uyap_ref: ref(dosyaRef, alan(s, 'Tarih', 'tarih', 'islemTarihi'), alan(s, 'İşlem', 'islem', 'Açıklama', 'aciklama')),
+    uyap_ref: ref(dosyaRef, alan(s, 'Tarih', 'tarih'), alan(s, 'İşlem Türü', 'İşlem', 'islem')),
     dosya_ref: dosyaRef,
     tarih: tarih(alan(s, 'Tarih', 'tarih', 'islemTarihi')),
-    islem: alan(s, 'İşlem', 'islem', 'islemTuru', 'Tür'),
-    aciklama: alan(s, 'Açıklama', 'aciklama', 'detay'),
+    islem: alan(s, 'İşlem Türü', 'İşlem', 'islem', 'İşlem Durumu'),
+    aciklama: alan(s, 'Açıklama', 'aciklama', 'İşlem Yapan Birim'),
   }));
 }
 
@@ -520,8 +520,72 @@ async function durusmalar(jeton) {
  * veriyor. Tek sayfa çekmek 879 KB'lık gerçek yanıtta evrakların yarısını
  * kaçırıyordu.
  */
+/**
+ * Evrak listesi bir AĞAÇ (treeview), tablo DEĞİL. UYAP her evrakı şöyle veriyor:
+ *   <li data-sid='İstinafa Evrak Gönderme Üst Yazısı 25/06/2026'>
+ *     <span class="file" title="&lt;div&gt;Birim Evrak No: 10570&lt;/div&gt;
+ *       &lt;div&gt;Evrakın Onaylandığı Tarih: 25/06/2026&lt;/div&gt;
+ *       &lt;div&gt;Gönderen Yer/Kişi: …&lt;/div&gt;…">
+ * Klasör düğümleri (span.folder, "Dosyaya Eklenen Son 20 Evrak") atlanır.
+ */
+function evrakAgaci(belge, dosyaRef, jeton) {
+  const cikti = [];
+  for (const li of belge.getElementsByTagName('li')) {
+    // Yalnız gerçek evrak: DOĞRUDAN çocuğu span.file olan li. getElementsByTagName
+    // torunları da getirir → iç içe li'lerde dış düğüm de içteki span.file'ı
+    // yakalayıp hayalet kayıt üretiyordu. cocuklar() sadece doğrudan çocuklar.
+    let fileSpan = null;
+    for (const sp of cocuklar(li)) {
+      if (sp.tagName === 'span' && (sp.getAttribute('class') || '').split(' ').includes('file')) {
+        fileSpan = sp; break;
+      }
+    }
+    if (!fileSpan) continue;
+
+    const sid = temizle(li.getAttribute('data-sid'));   // "ad + tarih"
+    // title HTML-encoded: <div>Anahtar: Değer</div>… — decode edip alanları çıkar.
+    const detay = titleAlanlari(fileSpan.getAttribute('title') || '');
+
+    // data-sid sonundaki tarih; öncesi ad.
+    let ad = sid, tarihStr = null;
+    const m = /^(.*?)[\s]*(\d{2}\/\d{2}\/\d{4})\s*$/.exec(sid || '');
+    if (m) { ad = temizle(m[1]); tarihStr = m[2]; }
+
+    const evrakNo = detay['Birim Evrak No'] || detay['Evrak No'];
+    const evrakTarihi = tarih(tarihStr) || tarih(detay['Evrakın Onaylandığı Tarih']);
+    const uyap_ref = String(evrakNo ?? ref(dosyaRef, ad || '', tarihStr || ''));
+
+    cikti.push({
+      uyap_ref,
+      dosya_ref: dosyaRef,
+      _jeton: jeton,
+      evrak_tipi: ad || detay['Evrak Türü'] || null,
+      evrak_tarihi: evrakTarihi,
+      gonderen: temizle(detay['Gönderen Yer/Kişi'] || detay['Gönderen']),
+      metin: null,   // PDF/UDF içeriği ayrı iş
+      uyap_link: evrakNo
+        ? `${TABAN}/view_document_brd.uyap?${new URLSearchParams({ evrakId: String(evrakNo), dosyaId: dosyaRef })}`
+        : null,
+    });
+  }
+  return cikti;
+}
+
+/** title="<div>K: V</div><div>K2: V2</div>" → { K: V, K2: V2 }. HTML-decode'lu. */
+function titleAlanlari(ham) {
+  const cozulmus = ham
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  const alanlar = {};
+  for (const m of cozulmus.matchAll(/<div[^>]*>([^:<]+):\s*([^<]*)<\/div>/g)) {
+    alanlar[m[1].trim()] = m[2].trim();
+  }
+  return alanlar;
+}
+
 async function evrakListesi(jeton, dosyaRef) {
   const hepsi = [];
+  const gorulen = new Set();
   let toplamSayfa = 1;
 
   for (let sayfa = 1; sayfa <= toplamSayfa && sayfa <= 20; sayfa++) {
@@ -530,20 +594,10 @@ async function evrakListesi(jeton, dosyaRef) {
       const m = /var\s+pageTotal\s*=\s*(\d+)/.exec(metin);
       if (m) toplamSayfa = Math.max(1, parseInt(m[1], 10));
     }
-    for (const s of tablodanSatirlar(htmlBelge(metin))) {
-      const evrakId = s._dosyaId || alan(s, 'evrakId', 'id');
-      hepsi.push({
-        uyap_ref: String(evrakId ?? ref(dosyaRef, JSON.stringify(s))),
-        dosya_ref: dosyaRef,
-        _jeton: jeton,   // evrak indirme için (evrakIndir dosya jetonunu ister)
-        evrak_tipi: alan(s, 'Evrak Türü', 'Tür', 'evrakTipi', 'Açıklama'),
-        evrak_tarihi: tarih(alan(s, 'Tarih', 'tarih', 'evrakTarihi')),
-        gonderen: alan(s, 'Gönderen', 'gonderen', 'Gönderen Birim'),
-        // Metin çıkarılamazsa kullanıcı belgeyi UYAP'ta açabilsin.
-        uyap_link: evrakId
-          ? `${TABAN}/view_document_brd.uyap?${new URLSearchParams({ evrakId: String(evrakId), dosyaId: dosyaRef })}`
-          : null,
-      });
+    for (const e of evrakAgaci(htmlBelge(metin), dosyaRef, jeton)) {
+      if (gorulen.has(e.uyap_ref)) continue;   // sayfalar arası tekrar
+      gorulen.add(e.uyap_ref);
+      hepsi.push(e);
     }
   }
   return hepsi;

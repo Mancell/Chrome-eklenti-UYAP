@@ -172,6 +172,13 @@ $('kesifIndir').addEventListener('click', async () => {
   durum(`İndiriliyor: ${kesif.kayitlar.length} istek.`, 'ok');
 });
 
+$('senkron').addEventListener('click', () => {
+  $('senkron').disabled = true;
+  durum('Senkron başlatılıyor…');
+  // Manuel tetikleme soğumayı ATLAR — kullanıcı bilerek bastı.
+  chrome.runtime.sendMessage({ tip: 'senkron-basla', manuel: true });
+});
+
 /** Tek yerden render: hem canlı mesaj hem popup açılışındaki son durum. */
 function gosterDurum(msg) {
   if (msg.tip === 'ilerleme') {
@@ -194,6 +201,10 @@ function gosterDurum(msg) {
       'ok');
   } else if (msg.tip === 'hata') {
     durum('Hata: ' + msg.mesaj, 'hata');
+  }
+  if (msg.tip === 'bitti' || msg.tip === 'hata') {
+    const b = document.getElementById('senkron');
+    if (b) b.disabled = false;
   }
 }
 

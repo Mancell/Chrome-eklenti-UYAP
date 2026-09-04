@@ -63,10 +63,14 @@ export default function Dosyalarim() {
       {dosya && (
         <div style={{ marginTop: 26 }}>
           <h3>{dosya.dosya_no} — {dosya.birim}</h3>
+          <p className="alt">
+            {suz(safahat.satirlar).length} işlem · {suz(evraklar.satirlar).length} evrak
+            {dosya.rol ? ` · Rolünüz: ${dosya.rol}` : ''}
+          </p>
 
           <h4>Safahat</h4>
           {suz(safahat.satirlar).length === 0 ? (
-            <p className="alt">Bu dosya için safahat kaydı yok.</p>
+            <p className="alt">Bu dosyada işlem kaydı görünmüyor (UYAP bu dosya için safahat vermiyor).</p>
           ) : (
             <div className="sarma">
               <table>
@@ -84,7 +88,7 @@ export default function Dosyalarim() {
 
           <h4 style={{ marginTop: 20 }}>Evraklar</h4>
           {suz(evraklar.satirlar).length === 0 ? (
-            <p className="alt">Evrak kaydı yok.</p>
+            <p className="alt">Bu dosyada evrak bulunamadı.</p>
           ) : (
             <div className="sarma">
               <table>

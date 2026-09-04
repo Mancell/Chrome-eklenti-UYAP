@@ -297,7 +297,11 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.tip === 'sayfa-hazir') otomatikSenkron();
 
   if (msg.tip === 'senkron-basla') {
+    // Manuel tetikleme soğumadan bağımsız (otomatikSenkron soğumaya bakıyor,
+    // bu doğrudan çağrı ona uğramıyor). Soğuma sayacını yine de güncelle ki
+    // hemen ardından otomatik senkron üstüne binmesin.
     kalbiBaslat();
+    chrome.storage.session.set({ sonSenkron: Date.now() }).catch(() => {});
     senkronCalistir()
       .then((sonuc) => bildir({ tip: 'bitti', sonuc }))
       .catch((e) => bildir({ tip: 'hata', mesaj: e.message }))
