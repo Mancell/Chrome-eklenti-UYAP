@@ -370,7 +370,7 @@ test('dosya kaydının alanları şema kolonlarını karşılıyor', () => {
     .filter((a) => !a.startsWith('_'));
   // 0001_sema.sql dosyalar kolonları (kullanici_id/olusturuldu/guncellendi hariç):
   const sema = ['uyap_ref', 'dosya_no', 'birim', 'yargi_turu', 'dosya_turu',
-                'rol', 'taraflar', 'acilis_tarihi', 'durum'];
+                'rol', 'taraflar', 'acilis_tarihi', 'durum', 'sira'];
   for (const a of anahtarlar) {
     assert.ok(sema.includes(a), `dosya kaydında şemada olmayan alan: ${a}`);
   }
@@ -820,4 +820,26 @@ test('sira RPC ile aynı tipte (metin) gönderiliyor', () => {
   }
   // Sıra yine de sayısal olarak anlamlı kalmalı (panel buna göre diziyor).
   assert.deepEqual(sade(r.map((e) => Number(e.sira))), [1, 2, 3, 4, 5, 6]);
+});
+
+// ---------------------------------------------------------------------------
+// UYAP SIRASI — hem dosyalarda hem evraklarda korunmalı. Panel açılış tarihine
+// göre yeniden diziyordu; kullanıcının UYAP'ta gördüğü sıra bozuluyordu.
+// ---------------------------------------------------------------------------
+test('dosya kaydı UYAP sırasını taşıyor (metin, RPC text okuyor)', () => {
+  const src = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
+  const f = src.slice(src.indexOf('async function dosyalar('), src.indexOf('async function safahat('));
+  assert.match(f, /sira: String\(\+\+sira\)/, 'dosya sırası üretilmiyor veya metin değil');
+  // Sıra, UYAP'ın döndürdüğü ham sıraya dayanmalı — yeniden sıralama yapılmamalı.
+  assert.ok(!/\.sort\(/.test(f), 'dosya listesi yeniden sıralanıyor, UYAP sırası bozulur');
+});
+
+test('dosya kaydının alanları şemayla uyumlu (rol + sira dahil)', () => {
+  // rol kolonu eklenmiş ama RPC'ye konmamıştı; sessizce yazılmıyordu.
+  const rpc = fs.readFileSync(new URL('../supabase/migrations/0002_rpc.sql', import.meta.url), 'utf8');
+  const blok = rpc.slice(rpc.indexOf('-- 1) Dosyalar ÖNCE'), rpc.indexOf('-- 2) Safahat'));
+  for (const alan of ['rol', 'sira']) {
+    assert.ok(blok.includes(`x.${alan}`), `RPC dosyalar insert'inde ${alan} yok`);
+    assert.ok(blok.includes(`${alan} = excluded.${alan}`), `RPC upsert'inde ${alan} güncellenmiyor`);
+  }
 });

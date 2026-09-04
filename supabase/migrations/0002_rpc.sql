@@ -104,20 +104,28 @@ begin
 
   -- 1) Dosyalar ÖNCE: alt kayıtlar bunların uyap_ref'ine bağlanacak.
   insert into public.dosyalar
-    (kullanici_id, uyap_ref, dosya_no, birim, yargi_turu, dosya_turu, taraflar, acilis_tarihi, durum, guncellendi)
+    (kullanici_id, uyap_ref, dosya_no, birim, yargi_turu, dosya_turu, taraflar, acilis_tarihi,
+     durum, rol, sira, guncellendi)
   select distinct on (trim(x.uyap_ref))
          v_kullanici, trim(x.uyap_ref), x.dosya_no, x.birim, x.yargi_turu, x.dosya_turu,
-         x.taraflar, public._tarih(x.acilis_tarihi), x.durum, now()
+         x.taraflar, public._tarih(x.acilis_tarihi), x.durum,
+         -- `rol` kolonu 0005'te eklenmişti ama RPC'ye konmamıştı: kullanıcının
+         -- dosyadaki rolü (Sanık/Davacı…) hiç yazılmıyordu.
+         x.rol,
+         -- UYAP'ın döndürdüğü SIRA. Panel bunu koruyor; açılış tarihine göre
+         -- yeniden dizmek kullanıcının UYAP'ta gördüğü sırayı bozuyordu.
+         public._sayi(x.sira, null::int), now()
     from jsonb_to_recordset(coalesce(p_veri->'dosyalar', '[]'::jsonb)) as x(
            uyap_ref text, dosya_no text, birim text, yargi_turu text,
-           dosya_turu text, taraflar text, acilis_tarihi text, durum text)
+           dosya_turu text, taraflar text, acilis_tarihi text, durum text,
+           rol text, sira text)
    where nullif(trim(x.uyap_ref), '') is not null
    order by trim(x.uyap_ref)
   on conflict (kullanici_id, uyap_ref) do update set
     dosya_no = excluded.dosya_no, birim = excluded.birim,
     yargi_turu = excluded.yargi_turu, dosya_turu = excluded.dosya_turu,
     taraflar = excluded.taraflar, acilis_tarihi = excluded.acilis_tarihi,
-    durum = excluded.durum, guncellendi = now();
+    durum = excluded.durum, rol = excluded.rol, sira = excluded.sira, guncellendi = now();
   get diagnostics v_n = row_count;
   v_sonuc := v_sonuc || jsonb_build_object('dosyalar', v_n);
 

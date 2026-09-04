@@ -61,7 +61,10 @@ function klasorAgaci(satirlar: Satir[]): Dugum[] {
 }
 
 export default function Dosyalarim() {
-  const dosyalar = useTablo('dosyalar', { alan: 'acilis_tarihi' });
+  // UYAP'taki sırayla: `sira` UYAP'ın döndürdüğü sıradır. Açılış tarihine göre
+  // dizmek panelde farklı bir sıra üretiyordu. Eski kayıtlarda sira NULL —
+  // nullsFirst:false ile onlar sona düşer, yeni senkronda düzelir.
+  const dosyalar = useTablo('dosyalar', { alan: 'sira', artan: true });
   const safahat = useTablo('safahat', { alan: 'tarih' });
   const [secili, setSecili] = useState<string | null>(null);
   // Klasörler KAPALI başlar: 2000+ evraklı dosyada hepsini birden çizmek

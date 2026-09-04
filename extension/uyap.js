@@ -493,6 +493,10 @@ async function dosyalar() {
 
   const gorulen = new Set();
   const cikti = [];
+  // UYAP'ın döndürdüğü SIRA anlamlı (kendi mantığı; genelde en son işlem gören
+  // önce). Panel bunu koruyor — açılış tarihine göre yeniden dizmek kullanıcının
+  // UYAP'ta gördüğü sırayı bozuyordu.
+  let sira = 0;
   for (const s of hamSatirlar) {
     // esasNo İLK aday: UYAP dosya no'yu esasNo olarak veriyor (dosyaNo yok).
     const dosya_no = alan(s, 'esasNo', 'dosyaNo', 'dosyaNumarasi');
@@ -516,6 +520,7 @@ async function dosyalar() {
       yargi_turu: yargiTuruDenBirim(birim),   // birim adından, ad alanı gelmiyor
       dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru', 'dosyaTurKod'),   // yalnız kod
       rol: alan(s, 'rol', 'tarafRolu'),        // kullanıcının bu dosyadaki rolü
+      sira: String(++sira),                    // METİN: RPC `sira text` okuyor
       taraflar: alan(s, 'taraflar', 'tarafAdi', 'karsiTaraf'),
       acilis_tarihi,
       durum: normalizeDurum(alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum')),
