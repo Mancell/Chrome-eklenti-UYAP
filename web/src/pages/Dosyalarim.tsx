@@ -1,29 +1,58 @@
 import { useState } from 'react';
 import { useTablo, trTarih, indirmeBaglantisi, type Satir } from '../lib/veri';
 
+/** Ağaç düğümü: klasör başlığı ya da evrak satırı. */
+type Dugum =
+  | { tip: 'klasor'; ad: string; derinlik: number; adet: number }
+  | { tip: 'evrak'; satir: Satir; derinlik: number; ek: boolean };
+
 /**
- * Evrakları UYAP'taki AĞAÇ SIRASINA dizer: her ana evraktan hemen sonra kendi
- * ekleri gelir. Düz liste, hangi ekin hangi evrağa ait olduğunu kaybediyordu.
+ * UYAP'ın ağacını birebir kurar. Yapı çok seviyeli:
+ *   Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
+ *     └ Talimat Gelen Evrak 02/06/2025
+ *         └ Ek 1, Ek 2, Ek 3
+ * Düz liste "neyin neye ait olduğunu" kaybediyordu; klasör yolu ve ana/ek bağı
+ * burada tekrar ağaca dönüşüyor.
  */
-function evrakAgaci(satirlar: Satir[]): { satir: Satir; derinlik: number }[] {
+function klasorAgaci(satirlar: Satir[]): Dugum[] {
   const sirala = (a: Satir, b: Satir) => (a.sira ?? 0) - (b.sira ?? 0);
-  const kokler = satirlar.filter((e) => !e.ana_evrak_ref).sort(sirala);
-  const cikti: { satir: Satir; derinlik: number }[] = [];
-  for (const kok of kokler) {
-    cikti.push({ satir: kok, derinlik: 0 });
-    for (const ek of satirlar.filter((e) => e.ana_evrak_ref === kok.uyap_ref).sort(sirala)) {
-      cikti.push({ satir: ek, derinlik: 1 });
+  // Klasör yolu → o klasördeki KÖK evraklar (ekler ana evrağın altına gider).
+  const gruplar = new Map<string, Satir[]>();
+  for (const e of satirlar) {
+    if (e.ana_evrak_ref) continue;                 // ek: ana evrağın altında
+    const yol = String(e.klasor ?? '');
+    if (!gruplar.has(yol)) gruplar.set(yol, []);
+    gruplar.get(yol)!.push(e);
+  }
+
+  const cikti: Dugum[] = [];
+  let oncekiParcalar: string[] = [];
+  for (const [yol, evraklar] of gruplar) {
+    // Kök klasör dava adının kendisi (üstte başlıkta zaten var) → atlanıyor.
+    const parcalar = yol ? yol.split(' › ').slice(1) : [];
+    // Yalnız DEĞİŞEN seviyeleri yaz: ortak üst klasörler tekrar edilmesin.
+    parcalar.forEach((ad, i) => {
+      if (oncekiParcalar[i] === ad) return;
+      cikti.push({ tip: 'klasor', ad, derinlik: i, adet: i === parcalar.length - 1 ? evraklar.length : 0 });
+    });
+    oncekiParcalar = parcalar;
+
+    const taban = parcalar.length;
+    for (const ana of [...evraklar].sort(sirala)) {
+      cikti.push({ tip: 'evrak', satir: ana, derinlik: taban, ek: false });
+      const ekler = satirlar.filter((x) => x.ana_evrak_ref === ana.uyap_ref).sort(sirala);
+      for (const ek of ekler) cikti.push({ tip: 'evrak', satir: ek, derinlik: taban + 1, ek: true });
     }
   }
-  // Ana evrağı gelmemiş ekler (ör. sayfalama kesintisi) kaybolmasın.
-  const gosterilen = new Set(cikti.map((x) => x.satir.id));
+
+  // Ana evrağı gelmemiş ekler (sayfalama kesintisi) kaybolmasın.
+  const gosterilen = new Set(cikti.filter((d) => d.tip === 'evrak').map((d: any) => d.satir.id));
   for (const kalan of satirlar.filter((e) => !gosterilen.has(e.id)).sort(sirala)) {
-    cikti.push({ satir: kalan, derinlik: 1 });
+    cikti.push({ tip: 'evrak', satir: kalan, derinlik: 1, ek: Boolean(kalan.ana_evrak_ref) });
   }
   return cikti;
 }
 
-/** Dosya listesi + seçilen dosyanın safahatı ve evrakları. */
 export default function Dosyalarim() {
   const dosyalar = useTablo('dosyalar', { alan: 'acilis_tarihi' });
   const safahat = useTablo('safahat', { alan: 'tarih' });
@@ -120,26 +149,38 @@ export default function Dosyalarim() {
               <table>
                 <thead><tr><th>Tarih</th><th>Evrak</th><th>Gönderen</th><th>Belge</th></tr></thead>
                 <tbody>
-                  {evrakAgaci(evraklar.satirlar).map(({ satir: e, derinlik }) => (
-                    <tr key={e.id}>
-                      <td>{trTarih(e.evrak_tarihi)}</td>
-                      <td style={{ paddingLeft: 12 + derinlik * 22 }}>
-                        {derinlik > 0 && <span style={{ color: '#a09a9a' }}>└ </span>}
-                        {e.evrak_tipi ?? '—'}
-                      </td>
-                      <td>{e.gonderen ?? '—'}</td>
-                      <td>
-                        {e.uyap_link ? (
-                          <>
-                            <a href={e.uyap_link} target="_blank" rel="noreferrer noopener">Görüntüle ↗</a>
-                            {' · '}
-                            <a href={indirmeBaglantisi(e.uyap_link) ?? '#'}
-                               target="_blank" rel="noreferrer noopener">İndir ↓</a>
-                          </>
-                        ) : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {klasorAgaci(evraklar.satirlar).map((d, i) =>
+                    d.tip === 'klasor' ? (
+                      // Klasör başlığı: tüm satırı kaplar, evraklardan ayrışsın.
+                      <tr key={`k${i}`}>
+                        <td colSpan={4} style={{
+                          paddingLeft: 12 + d.derinlik * 22,
+                          background: '#faf8f8', fontWeight: 600, color: '#605d5d',
+                        }}>
+                          📂 {d.ad}{d.adet ? ` (${d.adet})` : ''}
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={d.satir.id}>
+                        <td>{trTarih(d.satir.evrak_tarihi)}</td>
+                        <td style={{ paddingLeft: 12 + d.derinlik * 22 }}>
+                          {d.ek ? '└ 📎 ' : '📄 '}
+                          {d.satir.evrak_tipi ?? '—'}
+                        </td>
+                        <td>{d.satir.gonderen ?? '—'}</td>
+                        <td>
+                          {d.satir.uyap_link ? (
+                            <>
+                              <a href={d.satir.uyap_link} target="_blank" rel="noreferrer noopener">Görüntüle ↗</a>
+                              {' · '}
+                              <a href={indirmeBaglantisi(d.satir.uyap_link) ?? '#'}
+                                 target="_blank" rel="noreferrer noopener">İndir ↓</a>
+                            </>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>

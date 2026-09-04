@@ -609,17 +609,22 @@ function evrakAgaci(belge, dosyaRef, jeton, yargiTuruAdi) {
     const anaEvrakId = temizle(fileSpan.getAttribute('ana_evrak_id'));
     const spanMetni = temizle(fileSpan.textContent);
 
-    // Klasör: ağaçta bu evrağın bulunduğu grup ("Dosyaya Eklenen Son 20 Evrak").
-    // İskeletin bir parçası; düz listede tamamen kayboluyordu.
-    let klasor = null;
-    for (let u = li.parentNode; u && !klasor; u = u.parentNode) {
+    // Klasör YOLU — tek klasör değil, TÜM zincir. UYAP ağacı çok seviyeli:
+    //   Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
+    // Yalnız en yakını almak "neye ait olduğu" bilgisini yarım bırakıyordu.
+    // Kökten yaprağa sıralı, ' › ' ile birleşik tutuluyor.
+    const yol = [];
+    for (let u = li.parentNode; u; u = u.parentNode) {
       if (adi(u) !== 'li') continue;
       for (const c of cocuklar(u)) {
         if (adi(c) === 'span' && (c.getAttribute('class') || '').split(/\s+/).includes('folder')) {
-          klasor = temizle(c.textContent); break;
+          const ad = temizle(c.textContent);
+          if (ad) yol.unshift(ad);        // üste çıkıyoruz → başa ekle
+          break;
         }
       }
     }
+    const klasor = yol.length ? yol.join(' › ') : null;
 
     const sid = temizle(li.getAttribute('data-sid'));   // ana evrakta "ad tarih"; ekte YOK
     let ad = null, tarihStr = null, ekMi = false;

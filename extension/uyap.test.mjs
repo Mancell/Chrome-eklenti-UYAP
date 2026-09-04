@@ -749,7 +749,9 @@ test('evrak iskeleti: ana/ek bağı, klasör ve sıra korunuyor', () => {
     'ekler ana evrağa bağlanmamış');
 
   // Klasör bilgisi (düz listede tamamen kayboluyordu).
-  assert.equal(kokler[0].klasor, 'Dosyaya Eklenen Son 20 Evrak');
+  // Klasör artık TAM YOL (kökten yaprağa), yalnız en yakın klasör değil.
+  assert.ok(kokler[0].klasor.endsWith('Dosyaya Eklenen Son 20 Evrak'), kokler[0].klasor);
+  assert.ok(kokler[0].klasor.includes(' › '), 'yol ayracı yok: ' + kokler[0].klasor);
 
   // Sıra: UYAP'ın görünüm sırası, ana evrak ilk.
   assert.equal(kokler[0].sira, 1);
@@ -765,4 +767,40 @@ test('evrak iskeleti: ana evrak kendi kendine bağlanmıyor', () => {
   const r = U.evrakAgaci(belge, 'D1', 'JETON', 'ceza');
   // Döngüsel bağ paneli sonsuz ağaca sokar.
   assert.ok(r.every((e) => e.ana_evrak_ref !== e.uyap_ref), 'kendine referans var');
+});
+
+// ---------------------------------------------------------------------------
+// ÇOK SEVİYELİ klasör yolu — UYAP ağacı derin:
+//   Dava › Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)
+// Yalnız en yakın klasörü almak "neye ait olduğu" bilgisini yarım bırakıyordu.
+// ---------------------------------------------------------------------------
+test('klasör YOLU kökten yaprağa tam çıkarılıyor', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci-derin.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+  const r = U.evrakAgaci(belge, 'D1', 'JETON', 'ceza');
+
+  const talimat = r.find((e) => e.evrak_tipi === 'Talimat Gelen Evrak' && !e.ana_evrak_ref);
+  assert.ok(talimat, 'ana evrak yok');
+  assert.equal(talimat.klasor,
+    'İstanbul 24. Ağır Ceza Mahkemesi 2025/404 › Tüm Evraklar › 2025/404 (Ceza Dava Dosyası) › Talimat Gelen Evrak (12)',
+    'klasör yolu eksik: ' + talimat.klasor);
+
+  // Farklı gruptaki evrak KENDİ yolunu taşımalı (gruplar karışmasın).
+  const muzekkere = r.find((e) => e.evrak_tipi === 'Müzekkere');
+  assert.ok(muzekkere.klasor.endsWith('Müzekkere (3)'), muzekkere.klasor);
+});
+
+test('derin ağaçta ekler doğru ana evrağa bağlanıyor', () => {
+  const html = fs.readFileSync(new URL('./test-verisi/evrak-agaci-derin.html', import.meta.url), 'utf8');
+  const { document: belge } = parseHTML(`<html><body>${html}</body></html>`);
+  const r = U.evrakAgaci(belge, 'D1', 'JETON', 'ceza');
+
+  const ekler = r.filter((e) => e.ana_evrak_ref);
+  assert.equal(ekler.length, 3, '3 ek bekleniyor');
+  // Üçü de AYNI ana evrağa bağlı olmalı; komşu evrağa kaymamalı.
+  assert.equal(new Set(ekler.map((e) => e.ana_evrak_ref)).size, 1, 'ekler farklı evraklara bağlanmış');
+
+  // Bağlandıkları evrak, eklerin ÜSTÜNDEKİ düğüm olmalı (16/10 değil 02/06).
+  const ana = r.find((e) => e.uyap_ref === ekler[0].ana_evrak_ref);
+  assert.equal(ana.evrak_tarihi, '2025-06-02', 'ekler yanlış evrağa bağlandı: ' + ana.evrak_tarihi);
 });
