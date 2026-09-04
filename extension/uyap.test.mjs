@@ -268,3 +268,36 @@ test('veri DOM’dan geldiğinde işaretleniyor — sessiz yedeklenme yok', () =
   const r = sade(U.dosyaListesiDomdan(html(DOSYALARIM)));
   assert.equal(r[0]._domdan, true);
 });
+
+// ---------------------------------------------------------------------------
+// Mesaj sözleşmesi
+//
+// background.js ile uyap.js iki AYRI dosya ve aralarındaki sözleşme yalnız
+// string eşleşmesi. `tebligatlar` mesajı tam bu yüzden aylarca sessizce
+// "Bilinmeyen istek." üretti: gönderen vardı, karşılayan yoktu, hata da
+// yutuluyordu. Statik kontrol ucuz ve bu sınıf hatayı tümden bitiriyor.
+// ---------------------------------------------------------------------------
+test('background’ın gönderdiği her mesajın uyap.js’te karşılığı var', () => {
+  const uyap = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
+  const bg = fs.readFileSync(new URL('./background.js', import.meta.url), 'utf8');
+
+  const karsilanan = new Set([...uyap.matchAll(/case '([a-z-]+)':/g)].map((m) => m[1]));
+  // Popup/arka plan arası bildirim tipleri içerik betiğine gitmiyor; onlar hariç.
+  const BILDIRIM = new Set(['ilerleme', 'bitti', 'hata', 'baglan', 'baglandi',
+                            'senkron-basla', 'sayfa-hazir']);
+  const gonderilen = [...bg.matchAll(/\{ tip: '([a-z-]+)'/g)]
+    .map((m) => m[1]).filter((t) => !BILDIRIM.has(t));
+
+  const eksik = gonderilen.filter((t) => !karsilanan.has(t));
+  assert.deepEqual(eksik, [], `uyap.js bu mesajları karşılamıyor: ${eksik.join(', ')}`);
+});
+
+test('bilinmeyen uçlar UCLAR’da null ve EKSIK_ADLAR’da adı var', () => {
+  // Null bir uç çağrılırsa NET hata versin; "Bilinmeyen istek." değil.
+  for (const [ad, uc] of Object.entries(U.UCLAR)) {
+    if (uc === null) {
+      assert.match(U.eksikUc(ad).message, /henüz bilinmiyor/,
+        `${ad} için okunur hata yok`);
+    }
+  }
+});

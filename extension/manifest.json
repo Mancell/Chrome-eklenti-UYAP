@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Av. Asistan — UYAP Senkron",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "UYAP Vatandaş Portalı'ndaki KENDİ dosyalarınızı, SİZ başlattığınızda panelinize aktarır. Otomatik/arka plan tarama yok.",
   "permissions": [
     "storage",

@@ -140,10 +140,32 @@ async function senkronCalistir() {
   const paket = { dosyalar, safahat: [], durusmalar: [], evraklar: [], tebligatlar: [] };
   let indirilen = 0;
 
+  // Bilinmeyen uçları HİÇ çağırma. Eskiden `durusmalar` her dosya için
+  // çağrılıp her seferinde patlıyor, üstüne 800 ms nezaket beklemesi
+  // harcanıyordu — 50 dosyada 40 saniye ve 50 hata mesajı, sıfır veri.
+  let yetenek = {};
+  try { ({ veri: yetenek } = await sor(sekme.id, { tip: 'yetenekler' })); } catch { /* eski sürüm */ }
+  const UC_ADI = { safahat: 'safahat', durusmalar: 'durusmalar', 'evrak-listesi': 'evrakListesi' };
+  const cekilecek = ['safahat', 'durusmalar', 'evrak-listesi']
+    .filter((t) => yetenek[UC_ADI[t]] !== false);
+  const atlanan = ['safahat', 'durusmalar', 'evrak-listesi'].filter((t) => !cekilecek.includes(t));
+
   for (const [i, d] of dosyalar.entries()) {
     bildir({ tip: 'ilerleme', mesaj: `Dosya ${i + 1}/${dosyalar.length}: ${d.dosya_no ?? ''}` });
 
-    for (const tip of ['safahat', 'durusmalar', 'evrak-listesi']) {
+    // Taraflar ayrı bir uçtan geliyor; liste zaten veriyorsa boşuna isteme.
+    if (!d.taraflar && yetenek.taraflar !== false) {
+      try {
+        const { veri } = await sor(sekme.id, { tip: 'taraflar', dosyaRef: d.uyap_ref });
+        const metin = veri
+          .map((t) => [t.Rol ?? t.rol, t['Adı'] ?? t.ad ?? t['Adı Soyadı']].filter(Boolean).join(': '))
+          .filter(Boolean).join(' · ');
+        if (metin) d.taraflar = metin;
+      } catch { /* taraflar kritik değil, dosya yine yazılsın */ }
+      await bekle(NEZAKET_MS);
+    }
+
+    for (const tip of cekilecek) {
       try {
         const { veri } = await sor(sekme.id, { tip, dosyaRef: d.uyap_ref });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
@@ -172,16 +194,13 @@ async function senkronCalistir() {
     await bekle(NEZAKET_MS);
   }
 
-  try {
-    bildir({ tip: 'ilerleme', mesaj: 'e-Tebligat alınıyor…' });
-    const { veri } = await sor(sekme.id, { tip: 'tebligatlar' });
-    paket.tebligatlar = veri;
-  } catch (e) {
-    bildir({ tip: 'ilerleme', mesaj: `e-Tebligat atlandı: ${e.message}` });
-  }
+  // e-Tebligat (UETS) BU PORTALDA YOK — ayrı bir sistem (ptt.etebligat.gov.tr)
+  // ve kullanıcı ertelemeyi seçti. Eskiden burada karşılığı olmayan bir mesaj
+  // gönderiliyor ve her senkronda "Bilinmeyen istek." hatası üretiliyordu.
 
   bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
   const sonuc = await rpc(cfg, paket);
+  if (atlanan.length) sonuc._atlanan = atlanan.join(', ');
   // `_yol` panele YAZILMIYOR; yalnız popup'ta gösteriliyor.
   sonuc._yol = domdan
     ? `liste sayfadan okundu (yedek yol)${idsiz ? ` — ${idsiz} satırda dosyaId yok, safahat/evrak çekilemedi` : ''}`

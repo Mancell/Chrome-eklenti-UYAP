@@ -459,7 +459,10 @@ async function evrakListesi(dosyaRef) {
         evrak_tipi: alan(s, 'Evrak Türü', 'Tür', 'evrakTipi', 'Açıklama'),
         evrak_tarihi: tarih(alan(s, 'Tarih', 'tarih', 'evrakTarihi')),
         gonderen: alan(s, 'Gönderen', 'gonderen', 'Gönderen Birim'),
-        uyap_link: null,
+        // Metin çıkarılamazsa kullanıcı belgeyi UYAP'ta açabilsin.
+        uyap_link: evrakId
+          ? `${TABAN}/view_document_brd.uyap?${new URLSearchParams({ evrakId: String(evrakId), dosyaId: dosyaRef })}`
+          : null,
       });
     }
   }
@@ -546,6 +549,12 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'taraflar':      return yanitla({ veri: await taraflar(istek.dosyaRef) });
         case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.dosyaRef) });
         case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
+        // Hangi uçlar biliniyor? Background bunu bir kez sorup bilinmeyenleri
+        // HİÇ çağırmıyor — yoksa her dosya için patlayan bir istek + 800 ms
+        // nezaket beklemesi boşa gidiyordu.
+        case 'yetenekler':    return yanitla({
+          veri: Object.fromEntries(Object.entries(UCLAR).map(([k, v]) => [k, Boolean(v)])),
+        });
         case 'kesif-al':      return yanitla({ kesif: await kesifHasadi() });
         default:              return yanitla({ hata: 'Bilinmeyen istek.' });
       }
