@@ -50,7 +50,7 @@ function yukle() {
   return vm.runInContext(
     '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
     '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu,' +
-    '   tablodanSatirlar, htmlBelge, satirlara })', g);
+    '   tablodanSatirlar, htmlBelge, satirlara, temizle, normalizeDurum, tarafMetni })', g);
 }
 
 const U = yukle();
@@ -299,5 +299,77 @@ test('bilinmeyen uçlar UCLAR’da null ve EKSIK_ADLAR’da adı var', () => {
       assert.match(U.eksikUc(ad).message, /henüz bilinmiyor/,
         `${ad} için okunur hata yok`);
     }
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Değer temizliği ve sınıflandırma — panele yazmadan önce.
+// ---------------------------------------------------------------------------
+
+test('temizle: nbsp ve çoklu boşluk sadeleşiyor', () => {
+  assert.equal(U.temizle('İstanbul\u00a0\u00a03.  İcra'), 'İstanbul 3. İcra');
+  assert.equal(U.temizle('  a  '), 'a');
+});
+
+test('temizle: UYAP boş göstergeleri null oluyor', () => {
+  for (const bos of ['', '  ', '-', '—', 'null', 'NULL', 'undefined', null, undefined]) {
+    assert.equal(U.temizle(bos), null, `${bos} null olmalı`);
+  }
+  // Gerçek veri null olmamalı.
+  assert.equal(U.temizle('2024/115'), '2024/115');
+});
+
+test('normalizeDurum: UYAP büyük harfini panele indirger', () => {
+  assert.equal(U.normalizeDurum('AÇIK'), 'açık');
+  assert.equal(U.normalizeDurum('Açık'), 'açık');
+  assert.equal(U.normalizeDurum('DERDEST'), 'açık', 'derdest = açık sayılıyor');
+  assert.equal(U.normalizeDurum('KAPALI'), 'kapalı');
+  assert.equal(U.normalizeDurum('-'), null);
+  assert.equal(U.normalizeDurum('Bilinmeyen'), 'bilinmeyen', 'tanınmayan olduğu gibi');
+});
+
+test('tarafMetni: Rol + Ad birleşimi', () => {
+  const s = [
+    { Rol: 'Davacı', Tipi: 'Gerçek', 'Adı': 'Ahmet Y.' },
+    { Rol: 'Davalı', Tipi: 'Tüzel', 'Adı': 'X A.Ş.' },
+  ];
+  assert.equal(U.tarafMetni(s), 'Davacı: Ahmet Y. · Davalı: X A.Ş.');
+});
+
+test('tarafMetni: 6’dan fazla taraf → +N kişi', () => {
+  const cok = Array.from({ length: 9 }, (_, i) => ({ Rol: 'Davalı', 'Adı': `Kişi ${i + 1}` }));
+  const m = U.tarafMetni(cok);
+  assert.ok(m.endsWith('· +3 kişi'), m);
+  assert.equal(m.split(' · ').length, 7, '6 taraf + 1 "+N" parçası');
+});
+
+test('tarafMetni: boş / eksik alanlar', () => {
+  assert.equal(U.tarafMetni([]), null);
+  assert.equal(U.tarafMetni([{ Rol: '-', 'Adı': 'null' }]), null, 'hepsi boş gösterge');
+  assert.equal(U.tarafMetni([{ 'Adı': 'Yalnız Ad' }]), 'Yalnız Ad', 'rol yoksa ad yeter');
+});
+
+// ---------------------------------------------------------------------------
+// Sınıflandırma bütünlüğü: veri çekicilerin ürettiği alanlar ŞEMA kolonlarıyla
+// birebir olmalı. Fazla alan RPC'de sessizce düşer (veri kaybı fark edilmez),
+// eksik alan panelde boş kolon. Bu test ikisini de yakalıyor.
+// ---------------------------------------------------------------------------
+test('dosya kaydının alanları şema kolonlarını karşılıyor', () => {
+  // uyap.js'te dosyalar() ağ istiyor; onun ürettiği ŞEKLİ elle kuruyoruz —
+  // ama alan adları koddaki nesne anahtarlarıyla aynı olmalı. Kaynak koddan
+  // dosya kaydının anahtarlarını çıkarıyoruz.
+  const src = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
+  const blok = src.slice(src.indexOf('gorulen.add(uyap_ref);'), src.indexOf('_alanlar:'));
+  // `uyap_ref,` shorthand olduğu için `:` opsiyonel.
+  const anahtarlar = [...blok.matchAll(/^\s{6}(\w+)[,:]/gm)].map((m) => m[1]);
+  // 0001_sema.sql dosyalar kolonları (kullanici_id/olusturuldu/guncellendi hariç):
+  const sema = ['uyap_ref', 'dosya_no', 'birim', 'yargi_turu', 'dosya_turu',
+                'taraflar', 'acilis_tarihi', 'durum'];
+  for (const a of anahtarlar) {
+    assert.ok(sema.includes(a), `dosya kaydında şemada olmayan alan: ${a}`);
+  }
+  for (const k of sema) {
+    assert.ok(anahtarlar.includes(k), `dosya kaydında eksik şema kolonu: ${k}`);
   }
 });

@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useTablo, trTarih } from '../lib/veri';
 
-/** Dosya listesi + seçilen dosyanın safahatı, evrakları, duruşmaları. */
+/** Dosya listesi + seçilen dosyanın safahatı ve evrakları. */
 export default function Dosyalarim() {
   const dosyalar = useTablo('dosyalar', { alan: 'acilis_tarihi' });
   const safahat = useTablo('safahat', { alan: 'tarih' });
   const evraklar = useTablo('evraklar', { alan: 'evrak_tarihi' });
-  const durusmalar = useTablo('durusmalar', { alan: 'tarih' });
   const [secili, setSecili] = useState<string | null>(null);
 
   const dosya = dosyalar.satirlar.find((d) => d.id === secili);
@@ -32,7 +31,7 @@ export default function Dosyalarim() {
             <thead>
               <tr>
                 <th>Dosya No</th><th>Birim</th><th>Yargı Türü</th>
-                <th>Taraflar</th><th>Açılış</th><th>Durum</th>
+                <th>Tür</th><th>Taraflar</th><th>Açılış</th><th>Durum</th>
               </tr>
             </thead>
             <tbody>
@@ -46,9 +45,10 @@ export default function Dosyalarim() {
                   <td>{d.dosya_no ?? '—'}</td>
                   <td>{d.birim ?? '—'}</td>
                   <td>{d.yargi_turu ?? '—'}</td>
+                  <td>{d.dosya_turu ?? '—'}</td>
                   <td>{d.taraflar ?? '—'}</td>
                   <td>{trTarih(d.acilis_tarihi)}</td>
-                  <td>{d.durum ?? '—'}</td>
+                  <td className={d.durum === 'açık' ? 'yesil' : undefined}>{d.durum ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -71,25 +71,6 @@ export default function Dosyalarim() {
                   {suz(safahat.satirlar).map((s) => (
                     <tr key={s.id}>
                       <td>{trTarih(s.tarih)}</td><td>{s.islem ?? '—'}</td><td>{s.aciklama ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <h4 style={{ marginTop: 20 }}>Duruşmalar</h4>
-          {suz(durusmalar.satirlar).length === 0 ? (
-            <p className="alt">Duruşma kaydı yok.</p>
-          ) : (
-            <div className="sarma">
-              <table>
-                <thead><tr><th>Tarih</th><th>Saat</th><th>Salon</th><th>Tür</th></tr></thead>
-                <tbody>
-                  {suz(durusmalar.satirlar).map((r) => (
-                    <tr key={r.id}>
-                      <td>{trTarih(r.tarih)}</td><td>{r.saat ?? '—'}</td>
-                      <td>{r.salon ?? '—'}</td><td>{r.tur ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -1,4 +1,5 @@
 import { useTablo, trTarih, gunEkle, kalanGun } from '../lib/veri';
+import { Not } from '../components';
 
 /**
  * Tebligatlar. SON GÜN saklanmıyor, hesaplanıyor: teblig_tarihi + sure_gun.
@@ -13,6 +14,10 @@ export default function Tebligatlar() {
   return (
     <>
       <h2>Tebligatlar</h2>
+      <Not>
+        <b>e-Tebligat (UETS) ayrı bir sistemdir</b> ve UYAP Vatandaş Portalı'ndan
+        gelmez. Entegrasyonu ayrı bir aşamada eklenecektir.
+      </Not>
       <p className="alt">Süresi dolmak üzere olanlar kırmızı, bir hafta içindekiler sarı.</p>
 
       {satirlar.length === 0 ? (

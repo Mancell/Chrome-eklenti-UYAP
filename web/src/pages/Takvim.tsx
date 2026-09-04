@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTablo, gunEkle, bugun } from '../lib/veri';
+import { Not } from '../components';
 
 /**
  * Aylık takvim — AYRI TABLO YOK. Duruşmalar ve tebligat son günleri (teblig +
@@ -44,6 +45,11 @@ export default function Takvim() {
   return (
     <>
       <h2>Takvim</h2>
+      <Not>
+        Takvim, duruşma ve tebligat tarihlerini gösterir. Bu iki veri UYAP
+        Vatandaş Portalı'nda sunulmadığından takvim şimdilik yalnız elle eklenen
+        kayıtlarla dolar; avukat portalı entegrasyonuyla otomatik dolacaktır.
+      </Not>
       <p className="alt">Duruşmalar ve tebligat süre sonları bir arada.</p>
 
       <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>

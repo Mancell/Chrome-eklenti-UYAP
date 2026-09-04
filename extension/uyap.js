@@ -202,11 +202,43 @@ function tarih(d) {
   return iso ? iso[0] : null;
 }
 
+/**
+ * UYAP değerini panele yazmadan önce temizler:
+ * - &nbsp; (\u00a0) → normal boşluk, çoklu boşluk teke
+ * - UYAP'ın boş göstergeleri ("-", "—", "null", "undefined", "") → null
+ * Böylece panelde "—" yerine gerçekten boş, arama/filtre doğru çalışıyor.
+ */
+function temizle(deger) {
+  if (deger == null) return null;
+  const s = String(deger).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  const kucuk = s.toLocaleLowerCase('tr');
+  if (kucuk === '-' || s === '—' || kucuk === 'null' || kucuk === 'undefined') return null;
+  return s;
+}
+
+/**
+ * Dosya durumunu panelin beklediği küçük harfe indirger. UYAP "AÇIK"/"KAPALI"
+ * gibi büyük harf veya karışık dönüyor; panel renklendirmesi (yeşil/nötr) buna
+ * bakıyor. Tanınmayan değer olduğu gibi (temizlenmiş) geçer.
+ */
+function normalizeDurum(deger) {
+  const t = temizle(deger);
+  if (!t) return null;
+  const k = t.toLocaleLowerCase('tr');
+  if (k.includes('açık') || k.includes('acik') || k.includes('derdest')) return 'açık';
+  if (k.includes('kapalı') || k.includes('kapali')) return 'kapalı';
+  return k;
+}
+
 /** Satırdan ilk dolu alanı seçer — UYAP alan adları uçtan uca değişebiliyor. */
 function alan(satir, ...adaylar) {
   for (const a of adaylar) {
     for (const k of Object.keys(satir)) {
-      if (k.toLowerCase() === a.toLowerCase() && String(satir[k]).trim()) return satir[k];
+      if (k.toLowerCase() === a.toLowerCase()) {
+        const v = temizle(satir[k]);
+        if (v) return v;
+      }
     }
   }
   return null;
@@ -412,7 +444,7 @@ async function dosyalar() {
       dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru'),
       taraflar: alan(s, 'taraflar', 'tarafAdi', 'karsiTaraf'),
       acilis_tarihi: tarih(alan(s, 'dosyaAcilisTarihi', 'acilisTarihi', 'acilisTarih')),
-      durum: alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum'),
+      durum: normalizeDurum(alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum')),
       // İlk gerçek çalıştırmada alan eşlemesini kesinleştirmek için: yanıtta
       // HANGİ alanların geldiğini popup'a taşıyoruz. Panele YAZILMIYOR.
       _alanlar: Object.keys(s),
@@ -467,6 +499,24 @@ async function evrakListesi(dosyaRef) {
     }
   }
   return hepsi;
+}
+
+/**
+ * Taraf satırlarını "Rol: Ad · Rol: Ad" tek satırına indirger. 6'dan fazlaysa
+ * "+N kişi" ekler — künye kolonu şişmesin. Birleştirme mantığı TEK YERDE
+ * (background da, ileride avukat portalı da bunu çağırsın).
+ */
+function tarafMetni(satirlar) {
+  const parcalar = satirlar
+    .map((t) => {
+      const rol = temizle(t.Rol ?? t.rol);
+      const ad = temizle(t['Adı'] ?? t.ad ?? t['Adı Soyadı'] ?? t.adSoyad);
+      return [rol, ad].filter(Boolean).join(': ');
+    })
+    .filter(Boolean);
+  if (!parcalar.length) return null;
+  if (parcalar.length <= 6) return parcalar.join(' · ');
+  return parcalar.slice(0, 6).join(' · ') + ` · +${parcalar.length - 6} kişi`;
 }
 
 async function taraflar(dosyaRef) {
@@ -547,6 +597,7 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'durusmalar':    return yanitla({ veri: await durusmalar(istek.dosyaRef) });
         case 'evrak-listesi': return yanitla({ veri: await evrakListesi(istek.dosyaRef) });
         case 'taraflar':      return yanitla({ veri: await taraflar(istek.dosyaRef) });
+        case 'taraf-metni':   return yanitla({ metin: tarafMetni(await taraflar(istek.dosyaRef)) });
         case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.dosyaRef) });
         case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
         // Hangi uçlar biliniyor? Background bunu bir kez sorup bilinmeyenleri

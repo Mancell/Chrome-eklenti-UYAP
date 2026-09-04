@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTablo, trTarih, bugun, gunEkle } from '../lib/veri';
+import { Not } from '../components';
 
 const SEKMELER = ['Yaklaşan', 'Geçmiş', 'Tümü'] as const;
 
@@ -24,6 +25,11 @@ export default function Durusmalar() {
   return (
     <>
       <h2>Duruşmalar</h2>
+      <Not>
+        <b>UYAP Vatandaş Portalı duruşma verisi sunmuyor.</b> Duruşma günleri
+        avukat portalı entegrasyonuyla (e-imza ile giriş) gelecektir. Aşağıda
+        elle eklenen kayıtları görürsünüz.
+      </Not>
       <p className="alt">Bugünkü duruşma kırmızı, üç gün içindekiler sarı gösterilir.</p>
 
       <div style={{ marginBottom: 12 }}>

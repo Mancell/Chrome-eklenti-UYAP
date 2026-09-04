@@ -137,6 +137,14 @@ async function senkronCalistir() {
   const alanlar = dosyalar[0]?._alanlar ?? null;
   for (const d of dosyalar) { delete d._domdan; delete d._idVar; delete d._alanlar; }
 
+  // Alan eşlemesini ilk çalıştırmada kesinleştirmek için: hangi künye kolonu
+  // KAÇ dosyada dolu? "acilis_tarihi: 0/3" görünce alan adının yanlış olduğunu
+  // anında biliyoruz — panele bakıp tahmin etmeye gerek kalmıyor.
+  const KUNYE = ['dosya_no', 'birim', 'yargi_turu', 'dosya_turu', 'acilis_tarihi', 'durum', 'taraflar'];
+  const doluluk = KUNYE
+    .map((k) => `${k}: ${dosyalar.filter((d) => d[k]).length}/${dosyalar.length}`)
+    .join(', ');
+
   const paket = { dosyalar, safahat: [], durusmalar: [], evraklar: [], tebligatlar: [] };
   let indirilen = 0;
 
@@ -153,13 +161,11 @@ async function senkronCalistir() {
   for (const [i, d] of dosyalar.entries()) {
     bildir({ tip: 'ilerleme', mesaj: `Dosya ${i + 1}/${dosyalar.length}: ${d.dosya_no ?? ''}` });
 
-    // Taraflar ayrı bir uçtan geliyor; liste zaten veriyorsa boşuna isteme.
+    // Taraflar ayrı uçtan geliyor; liste zaten veriyorsa boşuna isteme.
+    // Birleştirme mantığı uyap.js'te (tarafMetni) — tek yerde.
     if (!d.taraflar && yetenek.taraflar !== false) {
       try {
-        const { veri } = await sor(sekme.id, { tip: 'taraflar', dosyaRef: d.uyap_ref });
-        const metin = veri
-          .map((t) => [t.Rol ?? t.rol, t['Adı'] ?? t.ad ?? t['Adı Soyadı']].filter(Boolean).join(': '))
-          .filter(Boolean).join(' · ');
+        const { metin } = await sor(sekme.id, { tip: 'taraf-metni', dosyaRef: d.uyap_ref });
         if (metin) d.taraflar = metin;
       } catch { /* taraflar kritik değil, dosya yine yazılsın */ }
       await bekle(NEZAKET_MS);
@@ -206,6 +212,7 @@ async function senkronCalistir() {
     ? `liste sayfadan okundu (yedek yol)${idsiz ? ` — ${idsiz} satırda dosyaId yok, safahat/evrak çekilemedi` : ''}`
     : 'liste UYAP ucundan alındı';
   if (alanlar) sonuc._alanlar = alanlar.join(', ');
+  if (dosyalar.length) sonuc._doluluk = doluluk;
   return sonuc;
 }
 
