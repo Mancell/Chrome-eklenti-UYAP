@@ -669,3 +669,24 @@ test('gerçek ağaçtan üretilen uyap_link çalışan biçimde', () => {
   assert.equal(q.get('yargiTuru'), '1');
   assert.ok(q.get('evrakId'), 'evrakId dolu olmalı');
 });
+
+// ---------------------------------------------------------------------------
+// Zaman aşımı — timeout'suz bir fetch asılınca senkron hiç bitmiyor, RPC
+// çağrılmıyor ve O ANA KADAR ÇEKİLEN VERİ DE KAYBOLUYOR. Evrak indirme tam
+// bunu yaptı: dosyalar çekildi ama panele hiç yazılmadı. Statik kontrol.
+// ---------------------------------------------------------------------------
+test('UYAP fetch çağrılarının hepsi zaman aşımlı', () => {
+  const src = fs.readFileSync(new URL('./uyap.js', import.meta.url), 'utf8');
+  const ciplak = [...src.matchAll(/await fetch\(/g)];
+  // Tek istisna: zamanAsimiyla sarmalayıcısının kendi içi.
+  assert.equal(ciplak.length, 1, 'sarmalayıcı dışında çıplak fetch var');
+  const sarmalayici = src.slice(src.indexOf('async function zamanAsimiyla'), src.indexOf('/** Ham metin döndürür'));
+  assert.ok(sarmalayici.includes('await fetch('), 'tek fetch sarmalayıcıda olmalı');
+  assert.ok(sarmalayici.includes('AbortSignal.timeout'), 'sarmalayıcıda timeout yok');
+});
+
+test('senkron liste turunda evrak İNDİRME yapmıyor', () => {
+  // İndirme senkronu asıyordu; liste için gereksiz. Geri gelirse timeout şart.
+  const bg = fs.readFileSync(new URL('./background.js', import.meta.url), 'utf8');
+  assert.ok(!bg.includes("tip: 'evrak-indir'"), 'evrak indirme döngüsü geri gelmiş');
+});

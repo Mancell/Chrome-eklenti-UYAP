@@ -17,7 +17,6 @@ import { SUNUCU, GENEL_ANAHTAR } from './ayarlar.js';
 const NEZAKET_MS = 800;
 // ponytail: evrak indirme tavanı. Kaldırmak yerine sayfalamak gerekirse
 // "en yeni N" yerine "metni olmayanlar" mantığı panelden gelmeli.
-const EVRAK_TAVANI = 50;
 
 const bekle = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -181,7 +180,6 @@ async function _senkron(cfg) {
     .join(', ');
 
   const paket = { dosyalar, safahat: [], durusmalar: [], evraklar: [], tebligatlar: [] };
-  let indirilen = 0;
 
   // Bilinmeyen uçları HİÇ çağırma. Eskiden `durusmalar` her dosya için
   // çağrılıp her seferinde patlıyor, üstüne 800 ms nezaket beklemesi
@@ -254,26 +252,15 @@ async function _senkron(cfg) {
     }
   }
 
-  // Evrak baytları → düz metin. Tavana kadar; kalanlar künye + link olarak yazılır.
-  for (const e of paket.evraklar) {
-    if (indirilen >= EVRAK_TAVANI) break;
-    try {
-      // Evrak JETONU ile (uyap_ref içerik hash'i, UYAP onu tanımaz). Jetonsuz evrak
-      // indirilemez — künye + link olarak yazılır.
-      if (!e._evrakJeton) continue;
-      const { base64 } = await sor(sekme.id,
-        { tip: 'evrak-indir', evrakRef: e._evrakJeton, jeton: e._jeton, yargiTuru: e._yargiTuru });
-      const ikili = atob(base64);
-      const bayt = new Uint8Array(ikili.length);
-      for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i);
-      e.metin = await evrakMetni(bayt);   // sözleşme: fırlatmaz, en kötü ''
-      indirilen++;
-      bildir({ tip: 'ilerleme', mesaj: `Evrak ${indirilen}/${Math.min(paket.evraklar.length, EVRAK_TAVANI)}` });
-    } catch {
-      // İndirilemeyen evrak künyesiyle yazılır; metin RPC'de eskisini silmez.
-    }
-    await bekle(NEZAKET_MS);
-  }
+  // EVRAK İNDİRME BU TURDA KAPALI (kullanıcı kararı: önce liste).
+  //
+  // Neden kaldırıldı: her evrak 873 KB'lık bir PDF ve indirme fetch'inde
+  // timeout yoktu; senkron burada ASILIP hiç bitmiyordu. Bitmeyince RPC de
+  // çağrılmıyor ve ÇEKİLEN EVRAKLAR DAHİ PANELE YAZILMIYORDU — "evrak yok"un
+  // son sebebi buydu. Liste için indirme zaten gereksiz: künye + uyap_link
+  // yeterli, kullanıcı belgeyi UYAP'ta açıyor.
+  //
+  // Metin çıkarma geri geldiğinde: timeout + evrak başına boyut sınırı şart.
 
   // e-Tebligat (UETS) BU PORTALDA YOK — ayrı bir sistem (ptt.etebligat.gov.tr)
   // ve kullanıcı ertelemeyi seçti. Eskiden burada karşılığı olmayan bir mesaj

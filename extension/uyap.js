@@ -28,6 +28,12 @@ const YOL = '/main/jsp/vatandas/';
 // çalışan URL bunu gösteriyor; ajx uçlarıyla aynı sanmak hataydı.
 const BELGE_YOL = '/main/jsp/';
 
+// UYAP çağrılarında ZAMAN AŞIMI ŞART. Timeout'suz bir fetch asılınca senkron
+// hiç bitmiyor, RPC çağrılmıyor ve O ANA KADAR ÇEKİLEN VERİ DE KAYBOLUYOR
+// (evrak indirme tam bunu yaptı). 30 sn: 873 KB'lık evrak yanıtına fazlasıyla
+// yeter, asılmayı ise erken keser.
+const ZAMAN_ASIMI_MS = 30000;
+
 const UCLAR = {
   dosyaListesi: { yol: YOL + 'vatandas_dosyalari_sorgula.ajx', bicim: 'xml' },
   taraflar:     { yol: YOL + 'dosya_taraf_bilgileri_brd.ajx', bicim: 'html' },
@@ -146,6 +152,21 @@ function xmlSatirlar(belge) {
     });
 }
 
+/**
+ * Zaman aşımlı fetch. Asılan bir istek senkronu sonsuza kadar kilitliyordu;
+ * AbortSignal.timeout okunur bir hataya çeviriyor.
+ */
+async function zamanAsimiyla(url, ayar) {
+  try {
+    return await fetch(url, { ...ayar, signal: AbortSignal.timeout(ZAMAN_ASIMI_MS) });
+  } catch (e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      throw new Error(`UYAP yanıt vermedi (${ZAMAN_ASIMI_MS / 1000} sn). Sayfayı yenileyip tekrar deneyin.`);
+    }
+    throw e;
+  }
+}
+
 /** Ham metin döndürür. Biçim (xml/html) çağıran tarafından yorumlanıyor. */
 async function cagir(ucAdi, govde) {
   const uc = UCLAR[ucAdi];
@@ -156,7 +177,7 @@ async function cagir(ucAdi, govde) {
   // için `+` ve `/` içeriyor ve URLSearchParams ile doğru kaçışlanması şart.
   const govdeMetni = metod === 'POST' ? new URLSearchParams(govde || {}).toString() : undefined;
 
-  const y = await fetch(TABAN + uc.yol, {
+  const y = await zamanAsimiyla(TABAN + uc.yol, {
     method: metod,
     credentials: 'include',              // kullanıcının KENDİ oturumu
     headers: {
@@ -728,7 +749,7 @@ async function evrakIndir(evrakRef, jeton, yargiTuruAdi) {
   // Görüntüleme ile AYNI URL kurucusu — biri düzelip diğeri unutulmasın.
   const url = belgeUrl('indir', evrakRef, jeton, yargiTuruAdi);
   if (!url) throw new Error('Evrak jetonu yok, indirilemez.');
-  const y = await fetch(url, {
+  const y = await zamanAsimiyla(url, {
     credentials: 'include',
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
   });
@@ -748,7 +769,7 @@ async function ucSagligi() {
   for (const [ad, uc] of Object.entries(UCLAR)) {
     if (!uc) { rapor[ad] = 'bilinmiyor (keşif bekliyor)'; continue; }
     try {
-      const y = await fetch(TABAN + uc.yol, {
+      const y = await zamanAsimiyla(TABAN + uc.yol, {
         method: uc.metod,
         credentials: 'include',
         headers: uc.metod === 'POST' ? { 'Content-Type': 'application/json' } : {},
