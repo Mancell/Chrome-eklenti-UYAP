@@ -690,3 +690,40 @@ test('senkron liste turunda evrak İNDİRME yapmıyor', () => {
   const bg = fs.readFileSync(new URL('./background.js', import.meta.url), 'utf8');
   assert.ok(!bg.includes("tip: 'evrak-indir'"), 'evrak indirme döngüsü geri gelmiş');
 });
+
+// ---------------------------------------------------------------------------
+// Bildirim akışı — kullanıcı senkronun nerede olduğunu görebilmeli. Panel
+// yazımı AĞ İSTEĞİ olduğu için kısıtlı, popup yerel olduğu için her adımda.
+// ---------------------------------------------------------------------------
+test('senkron döngüsü bildirimi TEK noktadan yapıyor', () => {
+  // Eskiden her adımda `bildir` + `durumBildir` yan yana yazılıyordu; alt adım
+  // eklerken biri unutuluyordu. Döngüde ikisi de doğrudan çağrılmamalı.
+  const bg = fs.readFileSync(new URL('./background.js', import.meta.url), 'utf8');
+  const bas = bg.indexOf('for (const [i, d] of dosyalar.entries())');
+  const son = bg.indexOf('for (const d of dosyalar) delete d._dosyaId');
+  assert.ok(bas > 0 && son > bas, 'senkron döngüsü bulunamadı');
+  const dongu = bg.slice(bas, son);
+  assert.ok(!/\bbildir\(\{/.test(dongu), 'döngüde çıplak bildir( var');
+  assert.ok(!/\bdurumBildir\(cfg/.test(dongu), 'döngüde çıplak durumBildir( var');
+  assert.ok(dongu.includes('await adim(cfg'), 'döngü adim() kullanmıyor');
+});
+
+test('alt adımlar kullanıcıya görünür mesaj üretiyor', () => {
+  const bg = fs.readFileSync(new URL('./background.js', import.meta.url), 'utf8');
+  for (const parca of ['dosya açılıyor', 'taraflar çekiliyor', 'çekiliyor…', 'bulundu']) {
+    assert.ok(bg.includes(parca), `"${parca}" adım mesajı yok`);
+  }
+  // Sonuç sayısı bulunur bulunmaz yazılmalı (0 ise kullanıcı hemen görsün).
+  assert.match(bg, /\$\{veri\.length\} \$\{adiTr\} bulundu/);
+});
+
+test('adim(): panel kısıtlı, bitti/hata muaf', () => {
+  const bg = fs.readFileSync(new URL('./background.js', import.meta.url), 'utf8');
+  const f = bg.slice(bg.indexOf('async function adim('), bg.indexOf('async function senkronCalistir'));
+  assert.ok(f.includes('PANEL_ARALIK_MS'), 'panel kısıtlaması yok');
+  assert.match(f, /const zorunlu = durum !== 'basladi'/, 'bitti/hata muafiyeti yok');
+  // Popup her koşulda yazılmalı (kısıtlamadan ÖNCE).
+  const popupSatir = f.indexOf('bildir({');
+  const kisitSatir = f.indexOf('if (!zorunlu');
+  assert.ok(popupSatir > 0 && popupSatir < kisitSatir, 'popup kısıtlamaya takılıyor');
+});

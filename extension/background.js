@@ -139,6 +139,24 @@ async function durumBildir(cfg, durum, mesaj, sayi, islenen, toplam) {
   } catch { /* durum bildirimi kritik değil */ }
 }
 
+// Panel yazımı AĞ İSTEĞİ; her alt adımda RPC atmak çok dosyalı hesapta yükü
+// katlar. Popup ise yerel ve ucuz. Bu yüzden: popup'a her zaman, panele en
+// fazla saniyede bir. `bitti`/`hata` muaf — onlar yazılmazsa son durum kaybolur.
+const PANEL_ARALIK_MS = 1000;
+let _sonPanelYazim = 0;
+
+/**
+ * Senkronun TEK bildirim noktası. Eskiden her adımda `bildir` ve `durumBildir`
+ * yan yana yazılıyordu; alt adım eklerken biri kolayca unutuluyordu.
+ */
+async function adim(cfg, mesaj, islenen, toplam, durum = 'basladi') {
+  bildir({ tip: durum === 'basladi' ? 'ilerleme' : durum, mesaj });
+  const zorunlu = durum !== 'basladi';           // bitti/hata her koşulda
+  if (!zorunlu && Date.now() - _sonPanelYazim < PANEL_ARALIK_MS) return;
+  _sonPanelYazim = Date.now();
+  await durumBildir(cfg, durum, mesaj, null, islenen, toplam);
+}
+
 async function senkronCalistir() {
   const cfg = await ayarlar();
   try {
@@ -156,8 +174,7 @@ async function _senkron(cfg) {
     throw new Error('Açık bir UYAP Vatandaş Portalı sekmesi yok. Önce vatandas.uyap.gov.tr’ye girin.');
   }
 
-  await durumBildir(cfg, 'basladi', 'Dosya listesi alınıyor…', null);
-  bildir({ tip: 'ilerleme', mesaj: 'Dosya listesi alınıyor…' });
+  await adim(cfg, 'Dosya listesi alınıyor…');
   const { veri: dosyalar } = await sor(sekme.id, { tip: 'dosyalar' });
 
   // Liste DOM'dan mı okundu, gerçek uçtan mı? Kullanıcı bilsin: sessiz
@@ -199,10 +216,9 @@ async function _senkron(cfg) {
 
   const hatalar = [];   // yutulmayacak: senkron sonunda panele yazılır
   for (const [i, d] of dosyalar.entries()) {
-    const durumMesaji = `${i + 1}/${dosyalar.length}: ${d.dosya_no ?? ''}`;
-    bildir({ tip: 'ilerleme', mesaj: `Dosya ${durumMesaji}` });
-    // Progress bar: panel bu islenen/toplam'dan çubuğu dolduruyor.
-    await durumBildir(cfg, 'basladi', durumMesaji, null, i + 1, dosyalar.length);
+    // Her alt adım kullanıcıya görünür: nerede olduğu ve ne bulunduğu.
+    const nerede = `${i + 1}/${dosyalar.length} · ${d.dosya_no ?? ''}`;
+    await adim(cfg, `${nerede} · dosya açılıyor…`, i + 1, dosyalar.length);
 
     // ÖNCE dosyayı oturumda AKTİF ET. UYAP'ın kendi akışı da böyle (dosya
     // listesi → islem_turleri → taraf/evrak). Atlanınca safahat `nosession`
@@ -223,6 +239,7 @@ async function _senkron(cfg) {
 
     // Taraflar ayrı uçtan; liste zaten veriyorsa boşuna isteme.
     if (!d.taraflar && yetenek.taraflar !== false && destekli('taraf_bilgileri')) {
+      await adim(cfg, `${nerede} · taraflar çekiliyor…`, i + 1, dosyalar.length);
       try {
         const { metin } = await sor(sekme.id, { tip: 'taraf-metni', jeton: d._dosyaId });
         if (metin) d.taraflar = metin;
@@ -233,11 +250,16 @@ async function _senkron(cfg) {
     for (const tip of cekilecek) {
       // Dosya bu sekmeyi desteklemiyorsa ÇAĞIRMA — hata değil, o veri yok.
       if (!destekli(IZIN_ADI[tip])) { desteksiz[tip] = (desteksiz[tip] ?? 0) + 1; continue; }
+      const adiTr = tip === 'evrak-listesi' ? 'evraklar' : tip;
+      await adim(cfg, `${nerede} · ${adiTr} çekiliyor…`, i + 1, dosyalar.length);
       try {
         // yargi_turu link kurulumunda lazım (yargiTuru parametresi).
         const { veri, tani } = await sor(sekme.id,
           { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref, yargiTuru: d.yargi_turu });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
+        // Sonuç BULUNUR BULUNMAZ görünsün: 0 çıkarsa kullanıcı senkron bitmeden
+        // fark eder, sonuna kadar beklemez.
+        await adim(cfg, `${nerede} · ${veri.length} ${adiTr} bulundu`, i + 1, dosyalar.length);
         // 0 evrak geldiyse SEBEBİ kaydet: yanıt boş mu (sunucu vermedi) yoksa
         // dolu ama ayrıştırılamadı mı? Kör tur bir daha olmasın.
         if (tip === 'evrak-listesi' && !veri.length && tani) {
@@ -268,7 +290,7 @@ async function _senkron(cfg) {
 
   for (const d of dosyalar) delete d._dosyaId;   // jeton panele yazılmaz
   for (const e of paket.evraklar) { delete e._jeton; delete e._evrakJeton; delete e._yargiTuru; }
-  bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
+  await adim(cfg, 'Panele yazılıyor…');
   const sonuc = await rpc(cfg, paket);
   const ozet = `${paket.dosyalar.length} dosya, ${paket.safahat.length} safahat, ${paket.evraklar.length} evrak`;
   // Hatalar varsa özete iliştir — kaç dosyada ne alınamadı görünür olsun.
