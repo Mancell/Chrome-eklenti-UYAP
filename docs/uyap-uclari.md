@@ -33,61 +33,52 @@ curl -s -X POST -H "Content-Type: application/json" -d '{}' \
   modülleri oturumsuz okunamıyor. Genel katman (`/theme/js/application/`,
   `/theme/js/uyapCore/`) ise herkese açık.
 
-## vatandas.uyap.gov.tr — VAR olan uçlar
+## vatandas.uyap.gov.tr — GERÇEK uçlar (keşif kaydı, 2026-09-04)
 
-Taban: `https://vatandas.uyap.gov.tr`
+**Uçlar kökte DEĞİL.** Taban yol: `/main/jsp/vatandas/`
 
-| Uç | Metod | İş |
+Kökte de `nosessionobject` dönüyor çünkü sunucuda `*.ajx` için catch-all
+eşlemesi var — ilk sondam varlığı doğru ama **yolu eksik** ölçmüştü. Aşağıdakiler
+portalın kendi isteklerinden alındı.
+
+**Gövdeler `application/x-www-form-urlencoded`, JSON DEĞİL.**
+**Yanıtlar karışık:** dosya listesi XML, taraf/evrak/safahat HTML parçası.
+
+| Uç (`/main/jsp/vatandas/` +) | Gövde | Yanıt |
 |---|---|---|
-| `/dosya_safahat_bilgileri_brd.ajx` | POST | safahat (dosya hareketleri) |
-| `/dosya_taraf_bilgileri_brd.ajx` | POST | taraflar |
-| `/dosya_tahsilat_reddiyat_bilgileri_brd.ajx` | POST | tahsilat / reddiyat |
-| `/get_evrak_mimeType_brd.ajx` | POST | evrakın MIME tipi |
-| `/download_document_brd.uyap` | GET | evrak baytı |
-| `/view_document_brd.uyap` | GET | evrak görüntüleme |
+| `vatandas_dosyalari_sorgula.ajx` | `yargiTuru=0&yargiBirimi=&dosyaYil=&mahkeme=&dosyaSira=&baslangicTarihi=&bitisTarihi=&dosyaKapanisBaslangicTarihi=&dosyaKapanisBitisTarihi=&dosyaKapaliMi=true` | XML `<root><DVOList><liste><VatandasGenelDVO>` |
+| `dosya_taraf_bilgileri_brd.ajx` | `dosyaId=…` | HTML `<table id='taraf_listesi_table'>` |
+| `dosya_evrak_bilgileri_brd.ajx` | `dosyaId=…&pageNumber=N` | HTML + `var pageTotal` (SAYFALI) |
+| `dosya_islem_turleri_sorgula_brd.ajx` | `dosyaId=…&kurumNo=` | XML `<HashMap><Entry>` |
+| `vatandas_mahkemeleri_sorgula.ajx` | `yargiTuru=0&yargiBirimi=&dosyaKapaliMi=true` | XML `<BirimDVO>` |
+| `dosya_safahat_bilgileri_brd.ajx` | `dosyaId=…` | (sondayla doğrulandı, kayıtta yok) |
+| `/download_document_brd.uyap` (kökte) | `?evrakId=…&dosyaId=…` | evrak baytı |
 
-## vatandas.uyap.gov.tr — OLMAYAN uçlar
+### ⚠ `dosyaId` SAYI DEĞİL
 
-Bunlar **avukat portalına özgü**; vatandaşta boş gövde dönüyor:
+Opak, şifrelenmiş base64 jetonu:
 
-`avukat_dosya_sorgula_cbs_brd.ajx`, `avukat_durusma_sorgula_brd.ajx`,
-`avukat_safahat_sorgula_brd.ajx`, `list_dosya_evraklar.ajx`,
-`dosyaAyrintiBilgileri_brd.ajx`, `getDocViewerParameters.ajx`,
-`search_phrase.ajx`, `search_phrase_detayli.ajx`,
-`getDosyaAramaParameters.ajx`, `mts_tebligat_safahat_list_brd.ajx`,
-`kisiIletisimBilgileriSorgula.ajx`, `get_kullanici_tum_bildirimleri.ajx`
+```
+ww6iHinZvx+hluPRY61cpK6DPMoL1cdxtMuJe0icBTk7bUTGsiGyFxvOZAT9KWqW
+```
 
-Denenip bulunamayan dosya-listesi adayları: `dosya_sorgula_brd.ajx`,
-`vatandas_dosya_sorgula_brd.ajx`, `vatandas_dosya_sorgula_cbs_brd.ajx`,
-`dosya_sorgula_cbs_brd.ajx`, `durusma_sorgula_brd.ajx`,
-`vatandas_durusma_sorgula_brd.ajx`, `safahat_sorgula_brd.ajx`
+`+` ve `/` içerdiği için **URL kaçışı şart** (`URLSearchParams`). İlk sürümdeki
+`\d{2,}` deseni bunu hiç yakalamıyordu.
 
-## ⛔ Kalan tek bilinmeyen: Dosyalarım listesi ucu
+### Başlıklar `<thead>` içinde doğrudan `<th>`
 
-`dosyaId` üreten giriş noktası. Gerisi ona bağlanıyor, o yüzden **tek blokaj bu.**
+`<tr>` sarmalayıcı yok: `<thead><th>Rol</th><th>Tipi</th>…`. Başlığı ilk
+`<tr>`'de aramak veri satırını başlık sanıp düşürüyor.
 
-### Geçici çözüm: DOM yedek yolu
+### Hâlâ bilinmeyen
 
-Uç bulunana kadar liste **sayfadaki tablodan** okunuyor
-(`dosyaListesiDomdan()`, `extension/uyap.js`). Kırılgan — UYAP arayüzü değişince
-çöker — bu yüzden kırılgan yüzey TEK FONKSİYONA hapsedildi: safahat, taraflar,
-tahsilat ve evrak indirme ölçülmüş uçlarda kalıyor.
+**Duruşma ucu.** Vatandaş portalında ayrı bir duruşma sorgusu görülmedi;
+bilgi safahat içinde geliyor olabilir. İlk gerçek safahat yanıtında bakılacak.
 
-Kritik parça satırdaki **`dosyaId`**: `href`/`onclick` içinden çekiliyor. Çıkarsa
-ölçülmüş uçların hepsi kullanılabilir hâle geliyor (hepsi `dosyaId` istiyor).
-Çıkmazsa satır içeriğinden deterministik `ref()` üretiliyor — idempotency
-korunuyor ama alt uçlar çağrılamıyor; popup bunu satır sayısıyla bildiriyor.
-
-`UCLAR.dosyaListesi` doldurulduğu an bu yol kendiliğinden devre dışı kalıyor.
-
-Bulmanın yolu (oturum gerekiyor, oturumsuz okunamadı):
-
-1. Eklenti popup → *Sorun giderme* → **Keşif modu açık**
-2. **UYAP sekmesini F5 ile yenile** (dinamik betik yalnız yeni yüklemede girer)
-3. UYAP'a gir → **Dosyalarım**
-4. Popup → **Kaydı kopyala** → `ajxIstekleri` listesindeki uç aranan şeydir
-
-Duruşma listesi ucu da aynı şekilde bulunacak (vatandaş karşılığı bilinmiyor).
+**`VatandasGenelDVO` alan adları.** Kayıtta ilk 200 karakter vardı, yalnız
+`birimId` ve `birimAdi` görülebildi. Kaydedicinin örnek sınırı 4000'e çıkarıldı;
+bir sonraki kayıt tam listeyi verecek. Bu arada `alan()` birden çok aday deniyor
+ve senkron sonucu UYAP'ın döndürdüğü alan adlarını popup'ta raporluyor.
 
 ## avukat.uyap.gov.tr — 9/9 uç DOĞRULANDI
 

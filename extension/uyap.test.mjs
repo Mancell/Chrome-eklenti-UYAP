@@ -49,7 +49,8 @@ function yukle() {
   // Test edilecek iç fonksiyonları dışarı al.
   return vm.runInContext(
     '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
-    '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu })', g);
+    '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu,' +
+    '   tablodanSatirlar, htmlBelge, satirlara })', g);
 }
 
 const U = yukle();
@@ -126,18 +127,50 @@ test('ref deterministik — idempotent senkronun dayanağı', () => {
 });
 
 test('bilinmeyen uç NET hata veriyor, belirsiz değil', () => {
-  // "keşif tamamlanmadı" gibi genel bir cümle kullanıcıya hiçbir şey anlatmıyordu.
-  assert.equal(U.UCLAR.dosyaListesi, null, 'dosya listesi ucu hâlâ bilinmiyor olmalı');
-  assert.match(U.eksikUc('dosyaListesi').message, /Dosyalarım listesi ucu henüz bilinmiyor/);
-  assert.match(U.eksikUc('durusmalar').message, /Duruşma listesi/);
+  // Duruşma ucu vatandaş portalında hâlâ görülmedi; hata onu ADIYLA söylemeli.
+  assert.equal(U.UCLAR.durusmalar, null, 'duruşma ucu hâlâ bilinmiyor');
+  assert.match(U.eksikUc('durusmalar').message, /Duruşma listesi ucu henüz bilinmiyor/);
 });
 
-test('doğrulanmış uçlar yerinde duruyor', () => {
-  // docs/uyap-uclari.md'de ölçülen uçlar; yanlışlıkla silinmesin.
-  assert.equal(U.UCLAR.safahat.yol, '/dosya_safahat_bilgileri_brd.ajx');
-  assert.equal(U.UCLAR.taraflar.yol, '/dosya_taraf_bilgileri_brd.ajx');
-  assert.equal(U.UCLAR.evrakIndir.yol, '/download_document_brd.uyap');
+test('gerçek uçlar keşif kaydındaki YOLLARLA duruyor', () => {
+  // Uçlar KÖKTE DEĞİL — /main/jsp/vatandas/ altında. Kökte de nosessionobject
+  // dönüyor (catch-all eşlemesi) ve bu ilk ölçümü yanıltmıştı; regresyon olmasın.
+  assert.equal(U.UCLAR.dosyaListesi.yol, '/main/jsp/vatandas/vatandas_dosyalari_sorgula.ajx');
+  assert.equal(U.UCLAR.taraflar.yol, '/main/jsp/vatandas/dosya_taraf_bilgileri_brd.ajx');
+  assert.equal(U.UCLAR.evrakListesi.yol, '/main/jsp/vatandas/dosya_evrak_bilgileri_brd.ajx');
+  assert.equal(U.UCLAR.evrakIndir.yol, '/download_document_brd.uyap', 'evrak baytı portal geneli');
   assert.equal(U.UCLAR.evrakIndir.metod, 'GET');
+});
+
+test('dosya listesi XML, taraf/evrak HTML olarak işaretli', () => {
+  assert.equal(U.UCLAR.dosyaListesi.bicim, 'xml');
+  assert.equal(U.UCLAR.taraflar.bicim, 'html');
+  assert.equal(U.UCLAR.evrakListesi.bicim, 'html');
+});
+
+test('OPAK dosyaId (base64) çekiliyor — gerçek UYAP biçimi', () => {
+  // Gerçek dosyaId sayı değil, 64 karakterlik şifreli jeton. İlk sürümdeki
+  // \d{2,} deseni bunu hiç yakalamıyordu.
+  const jeton = 'ww6iHinZvx+hluPRY61cpK6DPMoL1cdxtMuJe0icBTk7bUTGsiGyFxvOZAT9KWqW';
+  const m = html(`<table>
+    <tr><th>Dosya No</th><th>Birim</th></tr>
+    <tr><td><a href="/x.uyap?dosyaId=${jeton.replace(/\+/g, '%2B')}">2024/1</a></td><td>X</td></tr>
+  </table>`);
+  const r = sade(U.dosyaListesiDomdan(m));
+  assert.equal(r[0].uyap_ref, jeton, 'URL kaçışı çözülüp jeton aynen alınmalı');
+});
+
+test('HTML dönen uçlar ham başlıklarla satırlara çevriliyor', () => {
+  // dosya_taraf_bilgileri_brd.ajx gerçekte böyle dönüyor (HTML tablo parçası).
+  const r = sade(U.tablodanSatirlar(html(`
+    <table id='taraf_listesi_table'>
+      <thead><th>Rol</th><th>Tipi</th><th>Adı</th></thead>
+      <tr><td>Davacı</td><td>Gerçek Kişi</td><td>Ahmet Y.</td></tr>
+      <tr><td>Davalı</td><td>Tüzel Kişi</td><td>X A.Ş.</td></tr>
+    </table>`)));
+  assert.equal(r.length, 2);
+  assert.equal(r[0].Rol, 'Davacı');
+  assert.equal(r[1]['Adı'], 'X A.Ş.');
 });
 
 

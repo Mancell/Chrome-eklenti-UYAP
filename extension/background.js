@@ -132,7 +132,10 @@ async function senkronCalistir() {
   // yedeklenme, sonradan sebebi bulunamayan hataların kaynağı olur.
   const domdan = dosyalar.some((d) => d._domdan);
   const idsiz = dosyalar.filter((d) => d._domdan && !d._idVar).length;
-  for (const d of dosyalar) { delete d._domdan; delete d._idVar; }
+  // İlk gerçek çalıştırmada alan eşlemesini kesinleştirmek için: UYAP'ın
+  // döndürdüğü alan adlarını popup'a taşıyoruz. Panele YAZILMIYOR.
+  const alanlar = dosyalar[0]?._alanlar ?? null;
+  for (const d of dosyalar) { delete d._domdan; delete d._idVar; delete d._alanlar; }
 
   const paket = { dosyalar, safahat: [], durusmalar: [], evraklar: [], tebligatlar: [] };
   let indirilen = 0;
@@ -183,6 +186,7 @@ async function senkronCalistir() {
   sonuc._yol = domdan
     ? `liste sayfadan okundu (yedek yol)${idsiz ? ` — ${idsiz} satırda dosyaId yok, safahat/evrak çekilemedi` : ''}`
     : 'liste UYAP ucundan alındı';
+  if (alanlar) sonuc._alanlar = alanlar.join(', ');
   return sonuc;
 }
 

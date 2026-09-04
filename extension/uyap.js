@@ -16,20 +16,30 @@
 // tutmak gereksiz ve portal eklenirken yanlış yerde kalır.
 const TABAN = location.origin;
 
-const UCLAR = {
-  // ⛔ TEK BİLİNMEYEN: `dosyaId` üreten giriş noktası. Oturum gerektirdiği için
-  // oturumsuz sondayla bulunamadı; keşif modu bulacak. Denenip BULUNAMAYAN
-  // isimler docs/uyap-uclari.md'de — aynılarını tekrar denemeyin.
-  dosyaListesi: null,
-  durusmalar: null,      // vatandaş karşılığı bilinmiyor
-  evrakListesi: null,    // list_dosya_evraklar.ajx avukat'a özgü
+// Uçlar KÖKTE DEĞİL: gerçek yollar `/main/jsp/vatandas/` altında. Kökte de
+// `nosessionobject` dönüyor (sunucuda *.ajx için catch-all eşlemesi var), o
+// yüzden ilk sondam varlığı doğru ama YOLU eksik ölçmüştü. Buradakiler portalın
+// kendi isteklerinden alındı (keşif kaydı, 2026-09-04).
+//
+// GÖVDELER form-urlencoded, JSON DEĞİL.
+// YANITLAR karışık: dosya listesi XML, taraf/evrak HTML parçası.
+const YOL = '/main/jsp/vatandas/';
 
-  // ✔ Doğrulanmış
-  safahat:     { yol: '/dosya_safahat_bilgileri_brd.ajx', metod: 'POST' },
-  taraflar:    { yol: '/dosya_taraf_bilgileri_brd.ajx', metod: 'POST' },
-  tahsilat:    { yol: '/dosya_tahsilat_reddiyat_bilgileri_brd.ajx', metod: 'POST' },
-  evrakTipi:   { yol: '/get_evrak_mimeType_brd.ajx', metod: 'POST' },
-  evrakIndir:  { yol: '/download_document_brd.uyap', metod: 'GET' },
+const UCLAR = {
+  dosyaListesi: { yol: YOL + 'vatandas_dosyalari_sorgula.ajx', bicim: 'xml' },
+  taraflar:     { yol: YOL + 'dosya_taraf_bilgileri_brd.ajx', bicim: 'html' },
+  evrakListesi: { yol: YOL + 'dosya_evrak_bilgileri_brd.ajx', bicim: 'html' },
+  islemTurleri: { yol: YOL + 'dosya_islem_turleri_sorgula_brd.ajx', bicim: 'xml' },
+  // Keşif kaydında yoktu (kullanıcı safahat sekmesini açmamış) ama sonda uç
+  // olduğunu gösterdi. Biçimi taraf/evrak gibi HTML varsayılıyor; ilk gerçek
+  // çağrıda yanılırsak `bicim` düzeltilecek.
+  safahat:      { yol: YOL + 'dosya_safahat_bilgileri_brd.ajx', bicim: 'html' },
+  // Evrak baytı — kökte, portal geneli (avukat portalıyla ortak).
+  evrakIndir:   { yol: '/download_document_brd.uyap', bicim: 'bayt', metod: 'GET' },
+
+  // ⛔ Vatandaş portalında ayrı bir duruşma ucu görülmedi. Duruşma bilgisi
+  // safahat içinde geliyor olabilir; ilk gerçek safahat yanıtında bakılacak.
+  durusmalar: null,
 };
 
 const EKSIK_ADLAR = {
@@ -129,17 +139,42 @@ function xmlSatirlar(belge) {
     });
 }
 
+/** Ham metin döndürür. Biçim (xml/html) çağıran tarafından yorumlanıyor. */
 async function cagir(ucAdi, govde) {
   const uc = UCLAR[ucAdi];
   if (!uc) throw eksikUc(ucAdi);
+  const metod = uc.metod || 'POST';
+
+  // GÖVDE FORM-URLENCODED. Portal JSON kabul etmiyor; `dosyaId` base64 olduğu
+  // için `+` ve `/` içeriyor ve URLSearchParams ile doğru kaçışlanması şart.
+  const govdeMetni = metod === 'POST' ? new URLSearchParams(govde || {}).toString() : undefined;
+
   const y = await fetch(TABAN + uc.yol, {
-    method: uc.metod,
+    method: metod,
     credentials: 'include',              // kullanıcının KENDİ oturumu
-    headers: uc.metod === 'POST' ? { 'Content-Type': 'application/json' } : {},
-    body: uc.metod === 'POST' ? JSON.stringify(govde || {}) : undefined,
+    headers: {
+      // Portal jQuery ile konuşuyor; bu başlık olmadan isteği ajax saymayabilir.
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(metod === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } : {}),
+    },
+    body: govdeMetni,
   });
   if (!y.ok) throw new Error(`UYAP ${y.status} — oturumunuz düşmüş olabilir.`);
-  return xmlSatirlar(xmlAyristir(await y.text()));
+  return await y.text();
+}
+
+/** Ham yanıtı biçimine göre satırlara çevirir. */
+function satirlara(ucAdi, metin) {
+  const bicim = UCLAR[ucAdi]?.bicim;
+  // Biçim yanlış tanımlanmış olabilir — İÇERİĞE de bak, tanıma göre değil.
+  const xmlMi = /^\s*(<\?xml|<root[\s>])/i.test(metin);
+  if (bicim === 'xml' || xmlMi) return xmlSatirlar(xmlAyristir(metin));
+  return tablodanSatirlar(htmlBelge(metin));
+}
+
+/** HTML parçasını ayrıştırır (yanıtlar tam sayfa değil, parça olabiliyor). */
+function htmlBelge(metin) {
+  return new DOMParser().parseFromString(`<html><body>${metin}</body></html>`, 'text/html');
 }
 
 // ---------------------------------------------------------------------------
@@ -216,18 +251,28 @@ function basligiEsle(metin) {
   return null;
 }
 
-/** Satırdaki link/onclick içinden dosyaId çeker. Yoksa null. */
+/**
+ * Satırdaki link/onclick/attribute içinden dosyaId çeker.
+ *
+ * DİKKAT: dosyaId SAYI DEĞİL — opak, şifrelenmiş bir base64 jetonu
+ * ("ww6iHinZvx+hluPRY61cpK6DPMoL1cdxtMuJe0icBTk7bUTGsiGyFxvOZAT9KWqW").
+ * İlk sürümdeki `\d{2,}` deseni bu yüzden hiçbir şey yakalamıyordu.
+ */
 function satirdanDosyaId(satir) {
   const parcalar = [];
   for (const el of satir.getElementsByTagName('*')) {
-    for (const ad of ['href', 'onclick', 'data-id', 'data-dosyaid', 'id']) {
+    for (const ad of ['href', 'onclick', 'data-id', 'data-dosyaid', 'id', 'value']) {
       const d = el.getAttribute && el.getAttribute(ad);
       if (d) parcalar.push(d);
     }
   }
-  for (const p of parcalar) {
-    const m = /dosya[_-]?id["'\]\s]*[=:]\s*["']?(\d{2,})/i.exec(p);
-    if (m) return m[1];
+  for (const parca of parcalar) {
+    // base64 gövdesi: harf/rakam/+//=/%  (URL kaçışlı hâli de olabilir)
+    const m = /dosya[_-]?id["'\]\s]*[=:]\s*["']?([A-Za-z0-9+/%=_-]{2,})/i.exec(parca);
+    if (m) {
+      try { return decodeURIComponent(m[1].replace(/"/g, '')); }
+      catch { return m[1].replace(/"/g, ''); }
+    }
   }
   return null;
 }
@@ -237,122 +282,202 @@ function veriTablosu(belge) {
   let enIyi = null;
   for (const t of belge.getElementsByTagName('table')) {
     const n = t.getElementsByTagName('tr').length;
-    if (n >= 2 && (!enIyi || n > enIyi.n)) enIyi = { t, n };
+    if (n >= 1 && (!enIyi || n > enIyi.n)) enIyi = { t, n };
   }
   return enIyi && enIyi.t;
 }
 
-function dosyaListesiDomdan(belge = document) {
+/**
+ * Bir belgedeki veri tablosunu HAM başlık adlarıyla satırlara çevirir.
+ *
+ * Hem DOM yedek yolu hem de HTML dönen uçlar (taraflar, evraklar, safahat)
+ * bunu kullanıyor — iki ayrı tablo ayrıştırıcısı tutmanın anlamı yok.
+ */
+function tablodanSatirlar(belge) {
   const tablo = veriTablosu(belge);
   if (!tablo) return [];
 
   const satirlar = [...tablo.getElementsByTagName('tr')];
-  // Başlık: <th>'ler, yoksa ilk satırın <td>'leri.
-  let basliklar = [...satirlar[0].getElementsByTagName('th')].map((h) => h.textContent);
-  let ilkVeri = 1;
-  if (!basliklar.length) {
-    basliklar = [...satirlar[0].getElementsByTagName('td')].map((h) => h.textContent);
+  if (!satirlar.length) return [];
+
+  // UYAP başlıkları <thead> içinde DOĞRUDAN <th> olarak veriyor, <tr>
+  // sarmalayıcı olmadan (gerçek yanıt: <thead><th>Rol</th><th>Tipi</th>…).
+  // Bu yüzden başlığı ilk <tr>'de aramak yanlış: veri satırı başlık sanılıp
+  // düşüyordu. <th> nerede olursa olsun başlıktır.
+  const thler = [...tablo.getElementsByTagName('th')].map((h) => (h.textContent || '').trim());
+  let basliklar, veriSatirlari;
+  if (thler.length) {
+    basliklar = thler;
+    // Başlık <tr>'si varsa içinde <td> olmadığı için kendiliğinden eleniyor.
+    veriSatirlari = satirlar.filter((r) => r.getElementsByTagName('td').length);
+  } else {
+    basliklar = [...satirlar[0].getElementsByTagName('td')].map((h) => (h.textContent || '').trim());
+    veriSatirlari = satirlar.slice(1);
   }
-  const alanlar = basliklar.map(basligiEsle);
-  if (!alanlar.some(Boolean)) return [];   // tanınan başlık yok → veri tablosu değil
 
   const cikti = [];
-  for (const satir of satirlar.slice(ilkVeri)) {
+  for (const satir of veriSatirlari) {
     const hucreler = [...satir.getElementsByTagName('td')];
     if (!hucreler.length) continue;
-
     const kayit = {};
     hucreler.forEach((h, i) => {
-      const alanAdi = alanlar[i];
-      if (alanAdi) kayit[alanAdi] = (h.textContent || '').trim().replace(/\s+/g, ' ');
+      const ad = basliklar[i] || `sutun${i}`;
+      kayit[ad] = (h.textContent || '').trim().replace(/\s+/g, ' ');
     });
     if (!Object.values(kayit).some((v) => v)) continue;   // tamamen boş satır
-
     const id = satirdanDosyaId(satir);
-    cikti.push({
-      // dosyaId yoksa satır içeriğinden DETERMİNİSTİK anahtar — idempotency
-      // korunuyor, ama alt uçlar (safahat vb.) çağrılamıyor.
-      uyap_ref: id || ref(...Object.values(kayit)),
-      dosya_no: kayit.dosya_no ?? null,
-      birim: kayit.birim ?? null,
-      yargi_turu: kayit.yargi_turu ?? null,
-      dosya_turu: kayit.dosya_turu ?? null,
-      taraflar: kayit.taraflar ?? null,
-      acilis_tarihi: tarih(kayit.acilis_tarihi),
-      durum: kayit.durum ?? null,
-      _domdan: true,          // popup bunu gösteriyor; sessiz yedeklenme olmasın
-      _idVar: Boolean(id),
-    });
+    if (id) kayit._dosyaId = id;
+    cikti.push(kayit);
   }
   return cikti;
+}
+
+/** DOM yedek yolu: ham başlıkları kanonik alanlara eşler. */
+function dosyaListesiDomdan(belge = document) {
+  return tablodanSatirlar(belge)
+    .map((ham) => {
+      const kayit = {};
+      for (const [baslik, deger] of Object.entries(ham)) {
+        if (baslik === '_dosyaId') continue;
+        const alanAdi = basligiEsle(baslik);
+        if (alanAdi) kayit[alanAdi] = deger;
+      }
+      if (!Object.keys(kayit).length) return null;   // tanınan başlık yok
+      return {
+        uyap_ref: ham._dosyaId || ref(...Object.values(kayit)),
+        dosya_no: kayit.dosya_no ?? null,
+        birim: kayit.birim ?? null,
+        yargi_turu: kayit.yargi_turu ?? null,
+        dosya_turu: kayit.dosya_turu ?? null,
+        taraflar: kayit.taraflar ?? null,
+        acilis_tarihi: tarih(kayit.acilis_tarihi),
+        durum: kayit.durum ?? null,
+        _domdan: true,
+        _idVar: Boolean(ham._dosyaId),
+      };
+    })
+    .filter(Boolean);
 }
 
 // ---------------------------------------------------------------------------
 // Veri çekiciler
 // ---------------------------------------------------------------------------
 
+/**
+ * Dosya listesi. Gövde portalın kendi isteğinden alındı (keşif kaydı):
+ * form-urlencoded, `dosyaKapaliMi` açık/kapalı dosyaları ayırıyor — ikisini de
+ * çekip birleştiriyoruz, yoksa kapalı dosyalar hiç görünmüyor.
+ *
+ * Yanıt XML: <root><DVOList><liste><VatandasGenelDVO>…
+ */
+const DOSYA_SORGU = {
+  yargiTuru: '0', yargiBirimi: '', dosyaYil: '', mahkeme: '', dosyaSira: '',
+  baslangicTarihi: '', bitisTarihi: '',
+  dosyaKapanisBaslangicTarihi: '', dosyaKapanisBitisTarihi: '',
+};
+
 async function dosyalar() {
-  // Uç bilinmiyorsa sayfadaki tabloyu oku. Uç keşfedilince bu dal ölür.
-  if (!UCLAR.dosyaListesi) {
-    const satirlar = dosyaListesiDomdan();
-    if (satirlar.length) return satirlar;
-    throw new Error(
-      'Dosya listesi okunamadı. UYAP’ta **Dosyalarım** sayfasında olduğunuzdan ' +
-      'emin olun. Sayfa açıksa liste ucu değişmiş olabilir — popup’tan ' +
-      '"Keşif modu"nu açıp sayfayı yenileyin ve kaydı geliştiriciye iletin.',
-    );
+  const hamSatirlar = [];
+  for (const kapali of ['true', 'false']) {
+    try {
+      hamSatirlar.push(
+        ...satirlara('dosyaListesi', await cagir('dosyaListesi', { ...DOSYA_SORGU, dosyaKapaliMi: kapali })),
+      );
+    } catch (e) {
+      // Bir filtre patlarsa diğeri yine denensin; ikisi de patlarsa aşağıda
+      // DOM yedeğine düşüyoruz.
+      if (kapali === 'false' && !hamSatirlar.length) throw e;
+    }
   }
-  return (await cagir('dosyaListesi')).map((s) => ({
-    uyap_ref: String(alan(s, 'dosyaId', 'dosyaNo', 'id') ?? ref(JSON.stringify(s))),
-    dosya_no: alan(s, 'dosyaNo', 'esasNo'),
-    birim: alan(s, 'birimAdi', 'birim', 'mahkeme'),
-    yargi_turu: alan(s, 'yargiTuru', 'yargiTuruAdi'),
-    dosya_turu: alan(s, 'dosyaTuru', 'dosyaTuruAdi'),
-    taraflar: alan(s, 'taraflar', 'tarafAdi'),
-    acilis_tarihi: tarih(alan(s, 'acilisTarihi', 'dosyaAcilisTarihi')),
-    durum: alan(s, 'dosyaDurumu', 'durum'),
-  }));
+
+  if (!hamSatirlar.length) {
+    // Uç cevap verdi ama satır yok ya da şekli beklenmedik → sayfadaki tabloyu oku.
+    const domdan = dosyaListesiDomdan();
+    if (domdan.length) return domdan;
+    return [];
+  }
+
+  const gorulen = new Set();
+  const cikti = [];
+  for (const s of hamSatirlar) {
+    const id = alan(s, 'dosyaId', 'dosyaID', 'id');
+    const uyap_ref = String(id ?? ref(JSON.stringify(s)));
+    if (gorulen.has(uyap_ref)) continue;      // açık/kapalı sorguları çakışabilir
+    gorulen.add(uyap_ref);
+    cikti.push({
+      uyap_ref,
+      dosya_no: alan(s, 'dosyaNo', 'esasNo', 'dosyaNumarasi'),
+      birim: alan(s, 'birimAdi', 'birim', 'mahkemeAdi'),
+      yargi_turu: alan(s, 'yargiTuruAdi', 'yargiTuru', 'yargiTipi'),
+      dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru'),
+      taraflar: alan(s, 'taraflar', 'tarafAdi', 'karsiTaraf'),
+      acilis_tarihi: tarih(alan(s, 'dosyaAcilisTarihi', 'acilisTarihi', 'acilisTarih')),
+      durum: alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum'),
+      // İlk gerçek çalıştırmada alan eşlemesini kesinleştirmek için: yanıtta
+      // HANGİ alanların geldiğini popup'a taşıyoruz. Panele YAZILMIYOR.
+      _alanlar: Object.keys(s),
+    });
+  }
+  return cikti;
 }
 
 async function safahat(dosyaRef) {
-  return (await cagir('safahat', { dosyaId: dosyaRef })).map((s) => ({
-    uyap_ref: ref(dosyaRef, alan(s, 'tarih', 'islemTarihi'), alan(s, 'islem', 'aciklama')),
+  return satirlara('safahat', await cagir('safahat', { dosyaId: dosyaRef })).map((s) => ({
+    uyap_ref: ref(dosyaRef, alan(s, 'Tarih', 'tarih', 'islemTarihi'), alan(s, 'İşlem', 'islem', 'Açıklama', 'aciklama')),
     dosya_ref: dosyaRef,
-    tarih: tarih(alan(s, 'tarih', 'islemTarihi')),
-    islem: alan(s, 'islem', 'islemTuru', 'aciklama'),
-    aciklama: alan(s, 'aciklama', 'detay'),
+    tarih: tarih(alan(s, 'Tarih', 'tarih', 'islemTarihi')),
+    islem: alan(s, 'İşlem', 'islem', 'islemTuru', 'Tür'),
+    aciklama: alan(s, 'Açıklama', 'aciklama', 'detay'),
   }));
 }
 
 async function durusmalar(dosyaRef) {
   if (!UCLAR.durusmalar) throw eksikUc('durusmalar');
-  return (await cagir('durusmalar', { dosyaId: dosyaRef })).map((s) => ({
-    uyap_ref: ref(dosyaRef, alan(s, 'tarih', 'durusmaTarihi'), alan(s, 'saat')),
-    dosya_ref: dosyaRef,
-    tarih: tarih(alan(s, 'tarih', 'durusmaTarihi')),
-    saat: alan(s, 'saat', 'durusmaSaati'),
-    salon: alan(s, 'salon', 'salonAdi'),
-    tur: alan(s, 'tur', 'durusmaTuru'),
-    durum: alan(s, 'durum'),
-  }));
+  return satirlara('durusmalar', await cagir('durusmalar', { dosyaId: dosyaRef }));
 }
 
+/**
+ * Evrak listesi. Yanıt HTML ve SAYFALI: gövdesindeki `pageTotal` toplam sayfayı
+ * veriyor. Tek sayfa çekmek 879 KB'lık gerçek yanıtta evrakların yarısını
+ * kaçırıyordu.
+ */
 async function evrakListesi(dosyaRef) {
-  if (!UCLAR.evrakListesi) throw eksikUc('evrakListesi');
-  return (await cagir('evrakListesi', { dosyaId: dosyaRef })).map((s) => ({
-    uyap_ref: String(alan(s, 'evrakId', 'id') ?? ref(dosyaRef, JSON.stringify(s))),
-    dosya_ref: dosyaRef,
-    evrak_tipi: alan(s, 'evrakTipi', 'turAdi', 'evrakTuru'),
-    evrak_tarihi: tarih(alan(s, 'evrakTarihi', 'tarih')),
-    gonderen: alan(s, 'gonderen', 'gonderenAdi'),
-    uyap_link: `${TABAN}/view_document_brd.uyap?evrakId=${encodeURIComponent(alan(s, 'evrakId', 'id') ?? '')}&dosyaId=${encodeURIComponent(dosyaRef)}`,
-  }));
+  const hepsi = [];
+  let toplamSayfa = 1;
+
+  for (let sayfa = 1; sayfa <= toplamSayfa && sayfa <= 20; sayfa++) {
+    const metin = await cagir('evrakListesi', { dosyaId: dosyaRef, pageNumber: String(sayfa) });
+    if (sayfa === 1) {
+      const m = /var\s+pageTotal\s*=\s*(\d+)/.exec(metin);
+      if (m) toplamSayfa = Math.max(1, parseInt(m[1], 10));
+    }
+    for (const s of tablodanSatirlar(htmlBelge(metin))) {
+      const evrakId = s._dosyaId || alan(s, 'evrakId', 'id');
+      hepsi.push({
+        uyap_ref: String(evrakId ?? ref(dosyaRef, JSON.stringify(s))),
+        dosya_ref: dosyaRef,
+        evrak_tipi: alan(s, 'Evrak Türü', 'Tür', 'evrakTipi', 'Açıklama'),
+        evrak_tarihi: tarih(alan(s, 'Tarih', 'tarih', 'evrakTarihi')),
+        gonderen: alan(s, 'Gönderen', 'gonderen', 'Gönderen Birim'),
+        uyap_link: null,
+      });
+    }
+  }
+  return hepsi;
+}
+
+async function taraflar(dosyaRef) {
+  return satirlara('taraflar', await cagir('taraflar', { dosyaId: dosyaRef }));
 }
 
 /** Evrak baytı → base64. Metin ÇIKARILMAZ burada (background yapar). */
 async function evrakIndir(evrakRef, dosyaRef) {
+  // URLSearchParams şart: dosyaId base64 olduğu için `+` ve `/` içeriyor.
   const q = new URLSearchParams({ evrakId: evrakRef, dosyaId: dosyaRef ?? '' });
-  const y = await fetch(`${TABAN}${UCLAR.evrakIndir.yol}?${q}`, { credentials: 'include' });
+  const y = await fetch(`${TABAN}${UCLAR.evrakIndir.yol}?${q}`, {
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+  });
   if (!y.ok) throw new Error(`Evrak indirilemedi (UYAP ${y.status}).`);
   const bayt = new Uint8Array(await y.arrayBuffer());
   let ikili = '';
@@ -418,6 +543,7 @@ chrome.runtime.onMessage.addListener((istek, _gonderen, yanitla) => {
         case 'safahat':       return yanitla({ veri: await safahat(istek.dosyaRef) });
         case 'durusmalar':    return yanitla({ veri: await durusmalar(istek.dosyaRef) });
         case 'evrak-listesi': return yanitla({ veri: await evrakListesi(istek.dosyaRef) });
+        case 'taraflar':      return yanitla({ veri: await taraflar(istek.dosyaRef) });
         case 'evrak-indir':   return yanitla({ base64: await evrakIndir(istek.evrakRef, istek.dosyaRef) });
         case 'uc-sagligi':    return yanitla({ rapor: await ucSagligi() });
         case 'kesif-al':      return yanitla({ kesif: await kesifHasadi() });

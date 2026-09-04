@@ -181,10 +181,12 @@ function gosterDurum(msg) {
   } else if (msg.tip === 'bitti') {
     const s = { ...(msg.sonuc || {}) };
     const yol = s._yol; delete s._yol;
+    const alanlar = s._alanlar; delete s._alanlar;
     durum(
       'Senkron bitti.\n' +
         Object.entries(s).map(([k, v]) => `  ${k}: ${v}`).join('\n') +
-        (yol ? `\n${yol}` : ''),
+        (yol ? `\n${yol}` : '') +
+        (alanlar ? `\nUYAP alanları: ${alanlar}` : ''),
       'ok');
   } else if (msg.tip === 'hata') {
     durum('Hata: ' + msg.mesaj, 'hata');

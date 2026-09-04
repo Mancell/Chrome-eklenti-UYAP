@@ -55,7 +55,10 @@
     try {
       yanit = sekil(JSON.parse(yanitMetni));
     } catch {
-      yanit = { tip: 'metin', uzunluk: (yanitMetni || '').length, bas: (yanitMetni || '').slice(0, 200) };
+      // 200 karakter YETMİYOR: ilk gerçek kayıtta VatandasGenelDVO'nun alan
+      // adları kesiliyordu ve eşleme yazılamadı. Alan adları XML'in başında
+      // olduğu için 4000 karakter fazlasıyla yetiyor.
+      yanit = { tip: 'metin', uzunluk: (yanitMetni || '').length, bas: (yanitMetni || '').slice(0, 4000) };
     }
     const kayit = {
       zaman: new Date().toISOString(),
