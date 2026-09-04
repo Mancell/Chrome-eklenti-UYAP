@@ -529,47 +529,77 @@ async function durusmalar(jeton) {
  * Klasör düğümleri (span.folder, "Dosyaya Eklenen Son 20 Evrak") atlanır.
  */
 function evrakAgaci(belge, dosyaRef, jeton) {
+  // tagName HTML belgede BÜYÜK HARF ('SPAN'), XML/test ortamında küçük. Her
+  // karşılaştırma toLowerCase() ile — "test yeşil, tarayıcı boş" hatası buradan
+  // çıktı ve 0 evrak verdi.
+  const adi = (el) => (el && el.tagName ? String(el.tagName).toLowerCase() : '');
+  const fileMi = (sp) => (sp.getAttribute('class') || '').split(/\s+/).includes('file');
+  const TARIH = /^(.*?)\s*(\d{2}\/\d{2}\/\d{4})\s*$/;
+
   const cikti = [];
   for (const li of belge.getElementsByTagName('li')) {
-    // Yalnız gerçek evrak: DOĞRUDAN çocuğu span.file olan li. getElementsByTagName
-    // torunları da getirir → iç içe li'lerde dış düğüm de içteki span.file'ı
-    // yakalayıp hayalet kayıt üretiyordu. cocuklar() sadece doğrudan çocuklar.
+    // Yalnız DOĞRUDAN çocuğu span.file olan li (torunlar hayalet üretir).
     let fileSpan = null;
-    for (const sp of cocuklar(li)) {
-      if (sp.tagName === 'span' && (sp.getAttribute('class') || '').split(' ').includes('file')) {
-        fileSpan = sp; break;
-      }
-    }
+    for (const c of cocuklar(li)) if (adi(c) === 'span' && fileMi(c)) { fileSpan = c; break; }
     if (!fileSpan) continue;
 
-    const sid = temizle(li.getAttribute('data-sid'));   // "ad + tarih"
-    // title HTML-encoded: <div>Anahtar: Değer</div>… — decode edip alanları çıkar.
     const detay = titleAlanlari(fileSpan.getAttribute('title') || '');
+    // evrak_id = görüntüleme/indirme JETONU (tırnaklı gelir). Birim Evrak No değil.
+    const evrakJeton = jetonTemizle(fileSpan.getAttribute('evrak_id'));
+    const anaEvrakId = temizle(fileSpan.getAttribute('ana_evrak_id'));
+    const spanMetni = temizle(fileSpan.textContent);
 
-    // data-sid sonundaki tarih; öncesi ad.
-    let ad = sid, tarihStr = null;
-    const m = /^(.*?)[\s]*(\d{2}\/\d{2}\/\d{4})\s*$/.exec(sid || '');
-    if (m) { ad = temizle(m[1]); tarihStr = m[2]; }
+    const sid = temizle(li.getAttribute('data-sid'));   // ana evrakta "ad tarih"; ekte YOK
+    let ad = null, tarihStr = null, ekMi = false;
 
-    const evrakNo = detay['Birim Evrak No'] || detay['Evrak No'];
-    const evrakTarihi = tarih(tarihStr) || tarih(detay['Evrakın Onaylandığı Tarih']);
-    const uyap_ref = String(evrakNo ?? ref(dosyaRef, ad || '', tarihStr || ''));
+    if (sid) {
+      const m = TARIH.exec(sid);
+      if (m) { ad = temizle(m[1]); tarihStr = m[2]; } else ad = sid;
+    } else {
+      // EK (Ek 1..N): data-sid yok, ana_evrak_id ile bağlı. Ana evrağın adını ve
+      // tarihini üst li zincirinden miras al — eklerin de birer belge olduğu
+      // (asıl PDF'ler) listeye yansısın.
+      ekMi = true;
+      let p = li.parentNode, anaSid = null;
+      while (p) {
+        if (adi(p) === 'li' && p.getAttribute) { anaSid = temizle(p.getAttribute('data-sid')); if (anaSid) break; }
+        p = p.parentNode;
+      }
+      let anaAd = anaSid;
+      if (anaSid) { const m = TARIH.exec(anaSid); if (m) { anaAd = temizle(m[1]); tarihStr = m[2]; } }
+      ad = [anaAd, spanMetni].filter(Boolean).join(' — ') || null;
+    }
+    if (!ad) ad = spanMetni || temizle(detay['Türü']) || null;
+
+    const evrakNo = temizle(detay['Birim Evrak No'] || detay['Evrak No']);
+    const evrakTarihi = tarih(tarihStr) || tarih(detay['Evrakın Onaylandığı Tarih'])
+      || tarih(detay['Sisteme Gönderildiği Tarih']);
+
+    // Kimlik hep 8 karakter içerik-hash (dosya jetonu gibi jeton DEĞİL). Birim
+    // Evrak No kararlı → dosyaRef ile birlikte hash'lenir (dosyalar arası çakışma
+    // olmasın). Eklerde no yok → ana_evrak_id + "Ek N" yeter, çakışmaz.
+    const uyap_ref = evrakNo
+      ? ref(dosyaRef, 'evrakno', evrakNo)
+      : ref(dosyaRef, anaEvrakId || '', ad || '', tarihStr || '', spanMetni || '');
 
     cikti.push({
       uyap_ref,
       dosya_ref: dosyaRef,
-      _jeton: jeton,
-      evrak_tipi: ad || detay['Evrak Türü'] || null,
+      _jeton: jeton,             // dosya jetonu (indirme sorgusu için)
+      _evrakJeton: evrakJeton,   // evrak jetonu (indirme/görüntüleme). Panele YAZILMAZ.
+      evrak_tipi: ad,
       evrak_tarihi: evrakTarihi,
       gonderen: temizle(detay['Gönderen Yer/Kişi'] || detay['Gönderen']),
-      metin: null,   // PDF/UDF içeriği ayrı iş
-      uyap_link: evrakNo
-        ? `${TABAN}/view_document_brd.uyap?${new URLSearchParams({ evrakId: String(evrakNo), dosyaId: dosyaRef })}`
+      metin: null,               // PDF/UDF içeriği ayrı iş
+      // Görüntüleme linki evrak JETONU + dosya JETONU ister (içerik-ref değil).
+      uyap_link: evrakJeton
+        ? `${TABAN}/view_document_brd.uyap?${new URLSearchParams({ evrakId: evrakJeton, dosyaId: jeton || '' })}`
         : null,
     });
   }
   return cikti;
 }
+
 
 /** title="<div>K: V</div><div>K2: V2</div>" → { K: V, K2: V2 }. HTML-decode'lu. */
 function titleAlanlari(ham) {

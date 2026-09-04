@@ -422,43 +422,64 @@ test('yargiTuruDenBirim: birim adından çıkarım (ad alanı gelmiyor)', () => 
 });
 
 // ---------------------------------------------------------------------------
-// Evrak AĞACI (treeview) — UYAP evrak listesini tablo değil, jsTree olarak
-// veriyor. Parser'ım tablo arıyordu → 0 evrak. Gerçek yapıya birebir uygun
-// (keşif #3'ten): li[data-sid='ad tarih'] + span.file title="<div>K: V</div>".
+// Evrak AĞACI — gerçek UYAP düğümü (keşif #4, birebir):
+//   <li data-sid='ad tarih'><span class="file" title="<div>K: V</div>…"
+//        evrak_id='"jeton"'>ad tarih</span>
+//     <ul><li><span class="file" ana_evrak_id="…" evrak_id='"jeton"'>Ek 1</span></li>…</ul>
+//   </li>
+// evrak_id = görüntüleme/indirme JETONU. Ekler data-sid'siz, ana_evrak_id'li.
 // ---------------------------------------------------------------------------
-const EVRAK_AGACI = `<div id="browser" class="filetree treeview-gray">
-  <li><span class="folder">İstanbul 24. Ağır Ceza Mahkemesi 2025/404</span>
-    <ul>
-      <li class="closed"><span class="folder" style="color:red">Dosyaya Eklenen Son 20 Evrak</span>
-        <ul>
-          <li data-sid='İstinafa Evrak Gönderme Üst Yazısı 25/06/2026'>
-            <span class="file" data-html="true" title="&lt;div&gt;Birim Evrak No: 10570&lt;/div&gt;&lt;div&gt;Evrakın Onaylandığı Tarih: 25/06/2026&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: İstanbul 24. Ağır Ceza Mahkemesi&lt;/div&gt;">İstinafa Evrak Gönderme Üst Yazısı</span>
-          </li>
-          <li data-sid='Taranmış Evraklar 20/06/2026'>
-            <span class="file" title="&lt;div&gt;Birim Evrak No: 10571&lt;/div&gt;&lt;div&gt;Gönderen Yer/Kişi: Bilirkişi&lt;/div&gt;">Taranmış Evraklar</span>
-          </li>
-        </ul>
+const T = '&lt;div&gt;Birim Evrak No: 5329&lt;/div&gt;&lt;div&gt;Evrakın Onaylandığı Tarih : 01/07/2026&lt;/div&gt;'
+        + '&lt;div&gt;Gönderen Yer/Kişi: İstanbul 24. Ağır Ceza Mahkemesi&lt;/div&gt;&lt;div&gt;Türü: İstinafa Evrak Gönderme Üst Yazısı&lt;/div&gt;';
+const EK = (n) => `<li><span class="file" ana_evrak_id="14273297528" evrak_id='"EKJETON${n}+/="'>Ek ${n}</span></li>`;
+const EVRAK_AGACI = `<div id="browser" class="filetree">
+  <li><span class="folder">İstanbul 24. Ağır Ceza Mahkemesi 2025/404</span><ul>
+    <li class="closed"><span class="folder" style="color:red">Dosyaya Eklenen Son 20 Evrak</span><ul>
+      <li data-sid='İstinafa Evrak Gönderme Üst Yazısı 01/07/2026'>
+        <span class="file" data-html="true" title="${T}" evrak_id='"ANAJETON+/="'>İstinafa Evrak Gönderme Üst Yazısı 01/07/2026</span>
+        <ul>${[1,2,3,4,5,6].map(EK).join('')}</ul>
       </li>
-    </ul>
-  </li>
-</div>`;
+      <li data-sid='Taranmış Evraklar 25/06/2026'>
+        <span class="file" title="&lt;div&gt;Birim Evrak No: 5330&lt;/div&gt;" evrak_id='"TARJETON"'>Taranmış Evraklar 25/06/2026</span>
+        <ul>${EK(1)}</ul>
+      </li>
+    </ul></li>
+  </ul></li></div>`;
 
-test('evrakAgaci: treeview düğümlerinden evrak çıkarıyor', () => {
-  const r = sade(U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'JETON-1'));
-  assert.equal(r.length, 2, 'iki evrak (klasör düğümleri atlanmalı)');
-
-  assert.equal(r[0].evrak_tipi, 'İstinafa Evrak Gönderme Üst Yazısı');
-  assert.equal(r[0].evrak_tarihi, '2026-06-25', 'data-sid sonundaki tarih ISO');
-  assert.equal(r[0].gonderen, 'İstanbul 24. Ağır Ceza Mahkemesi', 'title’dan gönderen');
-  assert.equal(r[0].uyap_ref, '10570', 'Birim Evrak No kalıcı kimlik');
-  assert.ok(r[0].uyap_link.includes('evrakId=10570'), 'UYAP linki evrak No ile');
-  assert.equal(r[0].metin, null, 'metin ayrı iş');
+test('evrakAgaci: ana evraklar + ekler, klasörler hariç', () => {
+  const r = sade(U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'DJETON'));
+  // 2 ana + 6 ek + 1 ek = 9; klasör düğümleri (span.folder) sayılmaz.
+  assert.equal(r.length, 9, `9 evrak bekleniyor, ${r.length} geldi`);
+  assert.ok(!r.some((e) => (e.evrak_tipi || '').includes('Son 20 Evrak')), 'klasör evrak sayıldı');
 });
 
-test('evrakAgaci: klasör düğümleri (span.folder) atlanıyor', () => {
-  const r = U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'D', 'J');
-  // "Dosyaya Eklenen Son 20 Evrak" bir klasör; evrak sayılmamalı.
-  assert.ok(!r.some((e) => e.evrak_tipi && e.evrak_tipi.includes('Son 20 Evrak')));
+test('evrakAgaci: ana evrak alanları title + data-sid’den', () => {
+  const r = sade(U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'DJETON'));
+  const ana = r.find((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı');
+  assert.ok(ana, 'ana evrak bulunamadı');
+  assert.equal(ana.evrak_tarihi, '2026-07-01');
+  assert.equal(ana.gonderen, 'İstanbul 24. Ağır Ceza Mahkemesi');
+  assert.equal(ana._evrakJeton, 'ANAJETON+/=', 'evrak_id tırnaksız jeton');
+  assert.ok(ana.uyap_link.includes('evrakId=ANAJETON') && ana.uyap_link.includes('dosyaId=DJETON'),
+    'link evrak JETONU + dosya JETONU ile: ' + ana.uyap_link);
+  assert.equal(ana.uyap_ref.length, 8, 'uyap_ref 8 kar. içerik-hash, jeton değil');
+});
+
+test('evrakAgaci: ekler ana evrağın adını/tarihini miras alıyor', () => {
+  const r = sade(U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'DJETON'));
+  const ek3 = r.find((e) => e.evrak_tipi === 'İstinafa Evrak Gönderme Üst Yazısı — Ek 3');
+  assert.ok(ek3, 'Ek 3 yok: ' + r.map((e) => e.evrak_tipi).join(' | '));
+  assert.equal(ek3.evrak_tarihi, '2026-07-01', 'tarih ana evraktan');
+  assert.equal(ek3._evrakJeton, 'EKJETON3+/=');
+});
+
+test('evrakAgaci: tüm uyap_ref’ler birbirinden farklı (ekler çökmüyor)', () => {
+  const r = U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'DJETON');
+  const refler = r.map((e) => e.uyap_ref);
+  assert.equal(new Set(refler).size, refler.length, 'ref çakışması: ' + refler.join(','));
+  // Aynı ağaç ikinci kez → aynı ref'ler (idempotent).
+  const r2 = U.evrakAgaci(U.htmlBelge(EVRAK_AGACI), 'DOSYA-1', 'DJETON');
+  assert.deepEqual(r2.map((e) => e.uyap_ref), refler);
 });
 
 test('titleAlanlari: HTML-encoded div’leri anahtar/değere çözüyor', () => {
@@ -467,10 +488,35 @@ test('titleAlanlari: HTML-encoded div’leri anahtar/değere çözüyor', () => 
   assert.equal(d['Gönderen Yer/Kişi'], 'X');
 });
 
-test('evrakAgaci: Birim Evrak No yoksa ref() üretiliyor (idempotent)', () => {
-  const html = `<ul><li data-sid='İsimsiz Evrak 01/01/2026'><span class="file" title="&lt;div&gt;Gönderen Yer/Kişi: Y&lt;/div&gt;">İsimsiz</span></li></ul>`;
-  const a = sade(U.evrakAgaci(U.htmlBelge(html), 'D', 'J'));
-  const b = sade(U.evrakAgaci(U.htmlBelge(html), 'D', 'J'));
-  assert.equal(a[0].uyap_ref, b[0].uyap_ref, 'aynı evrak aynı ref');
-  assert.ok(a[0].uyap_ref, 'ref boş değil');
+// ---------------------------------------------------------------------------
+// BÜYÜK HARF tagName — Chrome HTML DOM'u 'SPAN'/'LI' verir, xmldom küçük harf.
+// 0.9.0 tam bu yüzden "test yeşil, tarayıcı 0 evrak" oldu. Sahte DOM gerçek
+// Chrome davranışını taklit ediyor; bu sınıf hata bir daha geçemez.
+// ---------------------------------------------------------------------------
+function chromeDugum(tag, attrs = {}, children = [], text = '') {
+  const n = {
+    tagName: tag.toUpperCase(), nodeType: 1, parentNode: null,
+    childNodes: children, textContent: text || children.map((c) => c.textContent).join(''),
+    getAttribute: (a) => (a in attrs ? attrs[a] : null),
+    getElementsByTagName(t) {
+      const out = [];
+      const gez = (el) => { for (const c of el.childNodes || []) { if (c.tagName === t.toUpperCase()) out.push(c); gez(c); } };
+      gez(this); return out;
+    },
+  };
+  for (const c of children) c.parentNode = n;
+  return n;
+}
+
+test('evrakAgaci: Chrome gibi BÜYÜK HARF tagName ile de evrak buluyor', () => {
+  const ek = chromeDugum('li', {}, [chromeDugum('span', { class: 'file', evrak_id: '"EKJ"', ana_evrak_id: '7' }, [], 'Ek 1')]);
+  const ana = chromeDugum('li', { 'data-sid': 'Üst Yazı 01/07/2026' }, [
+    chromeDugum('span', { class: 'file', evrak_id: '"ANAJ"', title: '&lt;div&gt;Birim Evrak No: 9&lt;/div&gt;' }, [], 'Üst Yazı 01/07/2026'),
+    chromeDugum('ul', {}, [ek]),
+  ]);
+  const belge = chromeDugum('body', {}, [chromeDugum('ul', {}, [ana])]);
+  const r = U.evrakAgaci(belge, 'D', 'J');
+  assert.equal(r.length, 2, `BÜYÜK HARF DOM'da ${r.length} evrak — tagName karşılaştırması kırık`);
+  assert.equal(r[1].evrak_tipi, 'Üst Yazı — Ek 1', 'ek, parentNode ile ana evrağı bulmalı');
 });
+

@@ -226,7 +226,10 @@ async function _senkron(cfg) {
   for (const e of paket.evraklar) {
     if (indirilen >= EVRAK_TAVANI) break;
     try {
-      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e.uyap_ref, jeton: e._jeton });
+      // Evrak JETONU ile (uyap_ref içerik hash'i, UYAP onu tanımaz). Jetonsuz evrak
+      // indirilemez — künye + link olarak yazılır.
+      if (!e._evrakJeton) continue;
+      const { base64 } = await sor(sekme.id, { tip: 'evrak-indir', evrakRef: e._evrakJeton, jeton: e._jeton });
       const ikili = atob(base64);
       const bayt = new Uint8Array(ikili.length);
       for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i);
@@ -244,13 +247,15 @@ async function _senkron(cfg) {
   // gönderiliyor ve her senkronda "Bilinmeyen istek." hatası üretiliyordu.
 
   for (const d of dosyalar) delete d._dosyaId;   // jeton panele yazılmaz
-  for (const e of paket.evraklar) delete e._jeton;
+  for (const e of paket.evraklar) { delete e._jeton; delete e._evrakJeton; }
   bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
   const sonuc = await rpc(cfg, paket);
   const ozet = `${paket.dosyalar.length} dosya, ${paket.safahat.length} safahat, ${paket.evraklar.length} evrak`;
   // Hatalar varsa özete iliştir — kaç dosyada ne alınamadı görünür olsun.
+  // Hata METNİ görünür olsun: "2 sorun (safahat)" hiçbir şey anlatmıyordu.
+  // İlk 2 hatanın gerçek mesajı şeride gider; tahmin döngüsü bitsin.
   const hataOzeti = hatalar.length
-    ? ` · ${hatalar.length} sorun (${[...new Set(hatalar.map((h) => h.split(':')[0].split(' ').pop()))].join(', ')})`
+    ? ` · ${hatalar.length} sorun: ${hatalar.slice(0, 2).map((h) => h.slice(0, 120)).join(' | ')}`
     : '';
   await durumBildir(cfg, 'bitti', ozet + hataOzeti, paket.dosyalar.length,
     paket.dosyalar.length, paket.dosyalar.length);
@@ -261,6 +266,7 @@ async function _senkron(cfg) {
     : 'liste UYAP ucundan alındı';
   if (alanlar) sonuc._alanlar = alanlar.join(', ');
   if (dosyalar.length) sonuc._doluluk = doluluk;
+  if (hatalar.length) sonuc._hatalar = hatalar.slice(0, 5).join('\n  ');
   return sonuc;
 }
 
