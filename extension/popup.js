@@ -179,10 +179,12 @@ function gosterDurum(msg) {
   } else if (msg.tip === 'baglandi') {
     durum('Bağlandı. UYAP’ta Dosyalarım sayfasına girin — senkron kendiliğinden başlar.', 'ok');
   } else if (msg.tip === 'bitti') {
-    const s = msg.sonuc || {};
+    const s = { ...(msg.sonuc || {}) };
+    const yol = s._yol; delete s._yol;
     durum(
       'Senkron bitti.\n' +
-        Object.entries(s).map(([k, v]) => `  ${k}: ${v}`).join('\n'),
+        Object.entries(s).map(([k, v]) => `  ${k}: ${v}`).join('\n') +
+        (yol ? `\n${yol}` : ''),
       'ok');
   } else if (msg.tip === 'hata') {
     durum('Hata: ' + msg.mesaj, 'hata');

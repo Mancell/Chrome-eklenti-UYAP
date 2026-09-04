@@ -66,6 +66,20 @@ Denenip bulunamayan dosya-listesi adayları: `dosya_sorgula_brd.ajx`,
 
 `dosyaId` üreten giriş noktası. Gerisi ona bağlanıyor, o yüzden **tek blokaj bu.**
 
+### Geçici çözüm: DOM yedek yolu
+
+Uç bulunana kadar liste **sayfadaki tablodan** okunuyor
+(`dosyaListesiDomdan()`, `extension/uyap.js`). Kırılgan — UYAP arayüzü değişince
+çöker — bu yüzden kırılgan yüzey TEK FONKSİYONA hapsedildi: safahat, taraflar,
+tahsilat ve evrak indirme ölçülmüş uçlarda kalıyor.
+
+Kritik parça satırdaki **`dosyaId`**: `href`/`onclick` içinden çekiliyor. Çıkarsa
+ölçülmüş uçların hepsi kullanılabilir hâle geliyor (hepsi `dosyaId` istiyor).
+Çıkmazsa satır içeriğinden deterministik `ref()` üretiliyor — idempotency
+korunuyor ama alt uçlar çağrılamıyor; popup bunu satır sayısıyla bildiriyor.
+
+`UCLAR.dosyaListesi` doldurulduğu an bu yol kendiliğinden devre dışı kalıyor.
+
 Bulmanın yolu (oturum gerekiyor, oturumsuz okunamadı):
 
 1. Eklenti popup → *Sorun giderme* → **Keşif modu açık**
@@ -75,12 +89,23 @@ Bulmanın yolu (oturum gerekiyor, oturumsuz okunamadı):
 
 Duruşma listesi ucu da aynı şekilde bulunacak (vatandaş karşılığı bilinmiyor).
 
-## Referans: avukat.uyap.gov.tr uçları
+## avukat.uyap.gov.tr — 9/9 uç DOĞRULANDI
 
-Kullanıcı vatandaş portalında kalmayı seçti; bu liste ileride avukat portalı
-istenirse hazır olsun diye duruyor. Kaynak: Chrome Web Store'da yayınlanan
-"Av. Asistan — UYAP & e-Tebligat" eklentisinin paket kodu (herkese dağıtılan
-JS). Yalnızca **olgular** (URL ve alan adları) alındı, kod alınmadı.
+Aynı sonda bu portalda da çalışıyor, hatta daha net: gerçek uç
+`<root><error>nosessionobject</error></root>`, olmayan yol **HTML hata sayfası**
+döndürüyor (vatandaştaki gibi boş değil).
+
+**Senkronun ihtiyaç duyduğu 9 ucun 9'u da var.** Yani avukat portalında
+bilinmeyen sıfır — vatandaşta takıldığımız dosya listesi ucu orada mevcut
+(`avukat_dosya_sorgula_cbs_brd.ajx`).
+
+Bağlanmadı çünkü e-imza erişimi ve test edecek oturum yok; kör uçuş olurdu.
+E-imza geldiğinde: `UCLAR`'ı portale göre seçtir (`location.hostname`),
+manifest'e host ekle, alan adlarını ilk gerçek oturumda keşifle kesinleştir.
+
+Kaynak: Chrome Web Store'da yayınlanan "Av. Asistan — UYAP & e-Tebligat"
+eklentisinin paket kodu (herkese dağıtılan JS) + yukarıdaki sonda. Yalnızca
+**olgular** (URL ve alan adları) alındı, kod alınmadı.
 
 | Uç | Gövde |
 |---|---|

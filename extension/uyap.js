@@ -12,7 +12,9 @@
 // YANITLAR XML. Portal jQuery 2.1.3 + Metronic tabanlı JSP; JSON dönmüyor.
 // Bu yüzden ayrıştırma katmanı DOMParser üzerinden.
 
-const TABAN = 'https://vatandas.uyap.gov.tr';
+// Content script portalın KENDİ üstünde çalışıyor; ayrı bir taban sabiti
+// tutmak gereksiz ve portal eklenirken yanlış yerde kalır.
+const TABAN = location.origin;
 
 const UCLAR = {
   // ⛔ TEK BİLİNMEYEN: `dosyaId` üreten giriş noktası. Oturum gerektirdiği için
@@ -175,12 +177,131 @@ function alan(satir, ...adaylar) {
   return null;
 }
 
+
+// ---------------------------------------------------------------------------
+// Dosya listesi — DOM yedek yolu
+//
+// ponytail: KIRILGAN, bilinçli. Vatandaş portalında dosya listesi ucu henüz
+// bilinmiyor (bkz. docs/uyap-uclari.md), ama Dosyalarım sayfası listeyi zaten
+// bir tablo olarak çiziyor. Buradan okuyoruz.
+//
+// TAVAN: UYAP arayüzü değişince bu fonksiyon çöker. Bu yüzden kırılgan yüzey
+// TEK FONKSİYONA hapsedildi — safahat, taraflar, tahsilat ve evrak indirme
+// ölçülmüş uçlarda kalıyor.
+//
+// YÜKSELTME YOLU: keşif modu gerçek ucu bulup `UCLAR.dosyaListesi` doldurunca
+// bu yol kendiliğinden devre dışı kalıyor; silinecek kod yok.
+//
+// KRİTİK PARÇA satırdaki `dosyaId`: o çıkarsa ölçülmüş uçların HEPSİ
+// kullanılabilir hâle geliyor, çünkü hepsi `dosyaId` istiyor.
+// ---------------------------------------------------------------------------
+
+/** Türkçe başlık → kanonik alan. Birden çok yazım karşılanıyor. */
+const BASLIK_ESLEME = [
+  ['dosya_no', ['dosya no', 'dosyano', 'esas no', 'esasno', 'dosya numarası']],
+  ['birim', ['birim', 'mahkeme', 'birim adı', 'yargı birimi', 'daire']],
+  ['yargi_turu', ['yargı türü', 'yargi turu', 'yargı tipi']],
+  ['dosya_turu', ['dosya türü', 'dosya turu', 'dava türü']],
+  ['taraflar', ['taraflar', 'taraf', 'karşı taraf', 'davacı', 'davalı']],
+  ['acilis_tarihi', ['açılış', 'açılış tarihi', 'acilis tarihi', 'tarih']],
+  ['durum', ['durum', 'dosya durumu', 'aşama']],
+];
+
+function basligiEsle(metin) {
+  const t = (metin || '').trim().toLocaleLowerCase('tr');
+  if (!t) return null;
+  for (const [alanAdi, adaylar] of BASLIK_ESLEME) {
+    if (adaylar.some((a) => t === a || t.includes(a))) return alanAdi;
+  }
+  return null;
+}
+
+/** Satırdaki link/onclick içinden dosyaId çeker. Yoksa null. */
+function satirdanDosyaId(satir) {
+  const parcalar = [];
+  for (const el of satir.getElementsByTagName('*')) {
+    for (const ad of ['href', 'onclick', 'data-id', 'data-dosyaid', 'id']) {
+      const d = el.getAttribute && el.getAttribute(ad);
+      if (d) parcalar.push(d);
+    }
+  }
+  for (const p of parcalar) {
+    const m = /dosya[_-]?id["'\]\s]*[=:]\s*["']?(\d{2,})/i.exec(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Sayfadaki EN KALABALIK tabloyu seçer — UYAP'ta yerleşim tabloları da var. */
+function veriTablosu(belge) {
+  let enIyi = null;
+  for (const t of belge.getElementsByTagName('table')) {
+    const n = t.getElementsByTagName('tr').length;
+    if (n >= 2 && (!enIyi || n > enIyi.n)) enIyi = { t, n };
+  }
+  return enIyi && enIyi.t;
+}
+
+function dosyaListesiDomdan(belge = document) {
+  const tablo = veriTablosu(belge);
+  if (!tablo) return [];
+
+  const satirlar = [...tablo.getElementsByTagName('tr')];
+  // Başlık: <th>'ler, yoksa ilk satırın <td>'leri.
+  let basliklar = [...satirlar[0].getElementsByTagName('th')].map((h) => h.textContent);
+  let ilkVeri = 1;
+  if (!basliklar.length) {
+    basliklar = [...satirlar[0].getElementsByTagName('td')].map((h) => h.textContent);
+  }
+  const alanlar = basliklar.map(basligiEsle);
+  if (!alanlar.some(Boolean)) return [];   // tanınan başlık yok → veri tablosu değil
+
+  const cikti = [];
+  for (const satir of satirlar.slice(ilkVeri)) {
+    const hucreler = [...satir.getElementsByTagName('td')];
+    if (!hucreler.length) continue;
+
+    const kayit = {};
+    hucreler.forEach((h, i) => {
+      const alanAdi = alanlar[i];
+      if (alanAdi) kayit[alanAdi] = (h.textContent || '').trim().replace(/\s+/g, ' ');
+    });
+    if (!Object.values(kayit).some((v) => v)) continue;   // tamamen boş satır
+
+    const id = satirdanDosyaId(satir);
+    cikti.push({
+      // dosyaId yoksa satır içeriğinden DETERMİNİSTİK anahtar — idempotency
+      // korunuyor, ama alt uçlar (safahat vb.) çağrılamıyor.
+      uyap_ref: id || ref(...Object.values(kayit)),
+      dosya_no: kayit.dosya_no ?? null,
+      birim: kayit.birim ?? null,
+      yargi_turu: kayit.yargi_turu ?? null,
+      dosya_turu: kayit.dosya_turu ?? null,
+      taraflar: kayit.taraflar ?? null,
+      acilis_tarihi: tarih(kayit.acilis_tarihi),
+      durum: kayit.durum ?? null,
+      _domdan: true,          // popup bunu gösteriyor; sessiz yedeklenme olmasın
+      _idVar: Boolean(id),
+    });
+  }
+  return cikti;
+}
+
 // ---------------------------------------------------------------------------
 // Veri çekiciler
 // ---------------------------------------------------------------------------
 
 async function dosyalar() {
-  if (!UCLAR.dosyaListesi) throw eksikUc('dosyaListesi');
+  // Uç bilinmiyorsa sayfadaki tabloyu oku. Uç keşfedilince bu dal ölür.
+  if (!UCLAR.dosyaListesi) {
+    const satirlar = dosyaListesiDomdan();
+    if (satirlar.length) return satirlar;
+    throw new Error(
+      'Dosya listesi okunamadı. UYAP’ta **Dosyalarım** sayfasında olduğunuzdan ' +
+      'emin olun. Sayfa açıksa liste ucu değişmiş olabilir — popup’tan ' +
+      '"Keşif modu"nu açıp sayfayı yenileyin ve kaydı geliştiriciye iletin.',
+    );
+  }
   return (await cagir('dosyaListesi')).map((s) => ({
     uyap_ref: String(alan(s, 'dosyaId', 'dosyaNo', 'id') ?? ref(JSON.stringify(s))),
     dosya_no: alan(s, 'dosyaNo', 'esasNo'),

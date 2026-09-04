@@ -128,6 +128,12 @@ async function senkronCalistir() {
   bildir({ tip: 'ilerleme', mesaj: 'Dosya listesi alınıyor…' });
   const { veri: dosyalar } = await sor(sekme.id, { tip: 'dosyalar' });
 
+  // Liste DOM'dan mı okundu, gerçek uçtan mı? Kullanıcı bilsin: sessiz
+  // yedeklenme, sonradan sebebi bulunamayan hataların kaynağı olur.
+  const domdan = dosyalar.some((d) => d._domdan);
+  const idsiz = dosyalar.filter((d) => d._domdan && !d._idVar).length;
+  for (const d of dosyalar) { delete d._domdan; delete d._idVar; }
+
   const paket = { dosyalar, safahat: [], durusmalar: [], evraklar: [], tebligatlar: [] };
   let indirilen = 0;
 
@@ -172,7 +178,12 @@ async function senkronCalistir() {
   }
 
   bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
-  return await rpc(cfg, paket);
+  const sonuc = await rpc(cfg, paket);
+  // `_yol` panele YAZILMIYOR; yalnız popup'ta gösteriliyor.
+  sonuc._yol = domdan
+    ? `liste sayfadan okundu (yedek yol)${idsiz ? ` — ${idsiz} satırda dosyaId yok, safahat/evrak çekilemedi` : ''}`
+    : 'liste UYAP ucundan alındı';
+  return sonuc;
 }
 
 // Otomatik senkron soğuması. Kullanıcı UYAP içinde sayfa değiştirdikçe

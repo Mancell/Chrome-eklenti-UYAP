@@ -31,7 +31,11 @@ function yukle() {
     DOMParser, Date, JSON, String, Object, Array, Math, Map, Set, Promise,
     URLSearchParams, console, setTimeout, clearTimeout, encodeURIComponent, btoa,
     fetch: async () => { throw new Error('test ağa çıkmaz'); },
-    location: { href: 'https://vatandas.uyap.gov.tr/main/jsp/vatandas/index.jsp' },
+    location: {
+      href: 'https://vatandas.uyap.gov.tr/main/jsp/vatandas/index.jsp',
+      origin: 'https://vatandas.uyap.gov.tr',
+    },
+    document: { getElementsByTagName: () => [] },
     window: { addEventListener() {}, removeEventListener() {}, postMessage() {} },
     chrome: {
       runtime: {
@@ -44,7 +48,8 @@ function yukle() {
   vm.runInContext(KAYNAK, g);
   // Test edilecek iç fonksiyonları dışarı al.
   return vm.runInContext(
-    '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc })', g);
+    '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
+    '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu })', g);
 }
 
 const U = yukle();
@@ -133,4 +138,100 @@ test('doğrulanmış uçlar yerinde duruyor', () => {
   assert.equal(U.UCLAR.taraflar.yol, '/dosya_taraf_bilgileri_brd.ajx');
   assert.equal(U.UCLAR.evrakIndir.yol, '/download_document_brd.uyap');
   assert.equal(U.UCLAR.evrakIndir.metod, 'GET');
+});
+
+
+// ---------------------------------------------------------------------------
+// DOM yedek yolu — dosya listesi ucu bilinmediği sürece tek veri kaynağı.
+// Kırılgan olduğu için (UYAP arayüzü değişirse çöker) davranışı kilitliyoruz.
+// ---------------------------------------------------------------------------
+
+const html = (m) => new DOMParser().parseFromString(m, 'text/html');
+
+const DOSYALARIM = `<html><body>
+  <table id="yerlesim"><tr><td>menü</td></tr><tr><td>başlık</td></tr></table>
+  <table id="veri">
+    <tr><th>Dosya No</th><th>Birim</th><th>Yargı Türü</th><th>Açılış</th><th>Durum</th></tr>
+    <tr>
+      <td><a href="/dosya_goruntule.uyap?dosyaId=90210&amp;x=1">2024/115</a></td>
+      <td>İstanbul 3. İcra Müdürlüğü</td><td>İcra</td><td>01.03.2024</td><td>Açık</td>
+    </tr>
+    <tr>
+      <td><a href="/dosya_goruntule.uyap?dosyaId=90211">2024/116</a></td>
+      <td>Ankara 1. Asliye Hukuk</td><td>Hukuk</td><td>15.04.2024</td><td>Derdest</td>
+    </tr>
+  </table>
+</body></html>`;
+
+test('DOM: Dosyalarım tablosu satırlara çevriliyor', () => {
+  const r = sade(U.dosyaListesiDomdan(html(DOSYALARIM)));
+  assert.equal(r.length, 2);
+  assert.equal(r[0].dosya_no, '2024/115');
+  assert.equal(r[0].birim, 'İstanbul 3. İcra Müdürlüğü');
+  assert.equal(r[0].yargi_turu, 'İcra');
+  assert.equal(r[0].durum, 'Açık');
+  assert.equal(r[0].acilis_tarihi, '2024-03-01', 'TR tarih ISO’ya çevrilmeli');
+});
+
+test('DOM: dosyaId href’ten çekiliyor — alt uçların hepsi buna bağlı', () => {
+  const r = sade(U.dosyaListesiDomdan(html(DOSYALARIM)));
+  assert.equal(r[0].uyap_ref, '90210');
+  assert.equal(r[1].uyap_ref, '90211');
+  assert.equal(r[0]._idVar, true);
+});
+
+test('DOM: onclick biçimindeki dosyaId de yakalanıyor', () => {
+  const m = html(`<table>
+    <tr><th>Dosya No</th><th>Birim</th></tr>
+    <tr><td><span onclick="dosyaAc({dosyaId: '77123'})">2024/9</span></td><td>Bursa 2. Sulh</td></tr>
+  </table>`);
+  const r = sade(U.dosyaListesiDomdan(m));
+  assert.equal(r[0].uyap_ref, '77123');
+});
+
+test('DOM: id yoksa ref() deterministik — idempotency korunuyor', () => {
+  const m = `<table>
+    <tr><th>Dosya No</th><th>Birim</th></tr>
+    <tr><td>2024/500</td><td>İzmir 4. İcra</td></tr>
+  </table>`;
+  const a = sade(U.dosyaListesiDomdan(html(m)));
+  const b = sade(U.dosyaListesiDomdan(html(m)));
+  assert.equal(a[0].uyap_ref, b[0].uyap_ref, 'aynı satır aynı ref üretmeli');
+  assert.equal(a[0]._idVar, false, 'id yokluğu işaretlenmeli');
+  assert.ok(a[0].uyap_ref, 'ref boş olmamalı');
+});
+
+test('DOM: en KALABALIK tablo seçiliyor, yerleşim tablosu değil', () => {
+  // Yerleşim tablosu önce geliyor ve tanınan başlığı yok; veri tablosu seçilmeli.
+  const r = sade(U.dosyaListesiDomdan(html(DOSYALARIM)));
+  assert.equal(r.length, 2, 'yerleşim tablosu seçilseydi 0 satır olurdu');
+});
+
+test('DOM: başlık eşanlamlıları (Esas No / Mahkeme)', () => {
+  const r = sade(U.dosyaListesiDomdan(html(`<table>
+    <tr><th>Esas No</th><th>Mahkeme</th></tr>
+    <tr><td>2023/77</td><td>Konya 1. Ağır Ceza</td></tr>
+  </table>`)));
+  assert.equal(r[0].dosya_no, '2023/77');
+  assert.equal(r[0].birim, 'Konya 1. Ağır Ceza');
+});
+
+test('DOM: tablo yoksa / tanınmayan başlıksa çökmüyor, boş dönüyor', () => {
+  assert.equal(U.dosyaListesiDomdan(html('<html><body><p>giriş yapın</p></body></html>')).length, 0);
+  assert.equal(U.dosyaListesiDomdan(html('<table><tr><th>Renk</th></tr><tr><td>mavi</td></tr></table>')).length, 0);
+});
+
+test('DOM: tamamen boş satırlar atlanıyor', () => {
+  const r = sade(U.dosyaListesiDomdan(html(`<table>
+    <tr><th>Dosya No</th><th>Birim</th></tr>
+    <tr><td></td><td></td></tr>
+    <tr><td>2024/1</td><td>X Mahkemesi</td></tr>
+  </table>`)));
+  assert.equal(r.length, 1);
+  assert.equal(r[0].dosya_no, '2024/1');
+});
+
+test('veri DOM’dan geldiğinde işaretleniyor — sessiz yedeklenme yok', () => {
+  const r = sade(U.dosyaListesiDomdan(html(DOSYALARIM)));
+  assert.equal(r[0]._domdan, true);
 });
