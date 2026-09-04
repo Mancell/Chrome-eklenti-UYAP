@@ -123,7 +123,7 @@ export async function rpc(cfg, veri) {
  * çalışıp çalışmadığını popup açmadan, panelden görebilsin diye. Best-effort:
  * durum yazımı başarısız olsa da senkron devam etmeli.
  */
-async function durumBildir(cfg, durum, mesaj, sayi) {
+async function durumBildir(cfg, durum, mesaj, sayi, islenen, toplam) {
   try {
     await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/senkron_durum`, {
       method: 'POST',
@@ -132,7 +132,10 @@ async function durumBildir(cfg, durum, mesaj, sayi) {
         apikey: cfg.supabaseAnon,
         Authorization: `Bearer ${cfg.supabaseAnon}`,
       },
-      body: JSON.stringify({ p_token: cfg.token, p_durum: durum, p_mesaj: mesaj ?? null, p_sayi: sayi ?? null }),
+      body: JSON.stringify({
+        p_token: cfg.token, p_durum: durum, p_mesaj: mesaj ?? null, p_sayi: sayi ?? null,
+        p_islenen: islenen ?? null, p_toplam: toplam ?? null,
+      }),
     });
   } catch { /* durum bildirimi kritik değil */ }
 }
@@ -190,14 +193,16 @@ async function _senkron(cfg) {
     .filter((t) => yetenek[UC_ADI[t]] !== false);
   const atlanan = ['safahat', 'durusmalar', 'evrak-listesi'].filter((t) => !cekilecek.includes(t));
 
+  const hatalar = [];   // yutulmayacak: senkron sonunda panele yazılır
   for (const [i, d] of dosyalar.entries()) {
-    bildir({ tip: 'ilerleme', mesaj: `Dosya ${i + 1}/${dosyalar.length}: ${d.dosya_no ?? ''}` });
+    const durumMesaji = `${i + 1}/${dosyalar.length}: ${d.dosya_no ?? ''}`;
+    bildir({ tip: 'ilerleme', mesaj: `Dosya ${durumMesaji}` });
+    // Progress bar: panel bu islenen/toplam'dan çubuğu dolduruyor.
+    await durumBildir(cfg, 'basladi', durumMesaji, null, i + 1, dosyalar.length);
 
-    // Taraflar ayrı uçtan geliyor; liste zaten veriyorsa boşuna isteme.
-    // Birleştirme mantığı uyap.js'te (tarafMetni) — tek yerde.
+    // Taraflar ayrı uçtan; liste zaten veriyorsa boşuna isteme.
     if (!d.taraflar && yetenek.taraflar !== false) {
       try {
-        // UYAP uçları JETON istiyor (uyap_ref artık içerik hash'i, jeton değil).
         const { metin } = await sor(sekme.id, { tip: 'taraf-metni', jeton: d._dosyaId });
         if (metin) d.taraflar = metin;
       } catch { /* taraflar kritik değil, dosya yine yazılsın */ }
@@ -209,8 +214,9 @@ async function _senkron(cfg) {
         const { veri } = await sor(sekme.id, { tip, jeton: d._dosyaId, dosyaRef: d.uyap_ref });
         paket[tip === 'evrak-listesi' ? 'evraklar' : tip].push(...veri);
       } catch (e) {
-        // Tek bir dosyanın safahatı alınamazsa TÜM senkron düşmesin.
-        bildir({ tip: 'ilerleme', mesaj: `${d.dosya_no ?? ''} ${tip}: ${e.message}` });
+        // Tek dosyanın safahatı düşmesin AMA sessizce yutulmasın: topla, sonunda
+        // panele yaz. "0 geliyor" bir daha görünmez kalmayacak.
+        hatalar.push(`${d.dosya_no ?? '?'} ${tip}: ${e.message}`);
       }
       await bekle(NEZAKET_MS);
     }
@@ -241,9 +247,13 @@ async function _senkron(cfg) {
   for (const e of paket.evraklar) delete e._jeton;
   bildir({ tip: 'ilerleme', mesaj: 'Panele yazılıyor…' });
   const sonuc = await rpc(cfg, paket);
-  await durumBildir(cfg, 'bitti',
-    `${paket.dosyalar.length} dosya, ${paket.safahat.length} safahat, ${paket.evraklar.length} evrak`,
-    paket.dosyalar.length);
+  const ozet = `${paket.dosyalar.length} dosya, ${paket.safahat.length} safahat, ${paket.evraklar.length} evrak`;
+  // Hatalar varsa özete iliştir — kaç dosyada ne alınamadı görünür olsun.
+  const hataOzeti = hatalar.length
+    ? ` · ${hatalar.length} sorun (${[...new Set(hatalar.map((h) => h.split(':')[0].split(' ').pop()))].join(', ')})`
+    : '';
+  await durumBildir(cfg, 'bitti', ozet + hataOzeti, paket.dosyalar.length,
+    paket.dosyalar.length, paket.dosyalar.length);
   if (atlanan.length) sonuc._atlanan = atlanan.join(', ');
   // `_yol` panele YAZILMIYOR; yalnız popup'ta gösteriliyor.
   sonuc._yol = domdan

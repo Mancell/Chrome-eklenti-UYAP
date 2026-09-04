@@ -31,7 +31,7 @@ export default function Dosyalarim() {
             <thead>
               <tr>
                 <th>Dosya No</th><th>Birim</th><th>Yargı Türü</th>
-                <th>Tür</th><th>Taraflar</th><th>Açılış</th><th>Durum</th>
+                <th>Rolünüz</th><th>Taraflar</th><th>Açılış</th><th>Durum</th>
               </tr>
             </thead>
             <tbody>
@@ -45,7 +45,7 @@ export default function Dosyalarim() {
                   <td>{d.dosya_no ?? '—'}</td>
                   <td>{d.birim ?? '—'}</td>
                   <td>{d.yargi_turu ?? '—'}</td>
-                  <td>{d.dosya_turu ?? '—'}</td>
+                  <td>{d.rol ?? '—'}</td>
                   <td>{d.taraflar ?? '—'}</td>
                   <td>{trTarih(d.acilis_tarihi)}</td>
                   <td className={d.durum === 'açık' ? 'yesil' : undefined}>

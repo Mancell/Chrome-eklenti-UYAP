@@ -218,6 +218,35 @@ function temizle(deger) {
 }
 
 /**
+ * Jeton tırnağını soyar. KRİTİK: UYAP dosya listesi XML'inde jetonu tırnak
+ * içinde veriyor (`<dosyaId>"ww6..."</dosyaId>`) ama alt-uç çağrılarında
+ * TIRNAKSIZ bekliyor. Tırnak kalırsa safahat/evrak/taraf boş dönüyor —
+ * içeriğin gelmemesinin sebebi buydu.
+ */
+function jetonTemizle(deger) {
+  const t = temizle(deger);
+  if (!t) return null;
+  const soyulmus = t.replace(/^"+|"+$/g, '');
+  return soyulmus || null;   // sadece tırnaktan ibaretse null
+}
+
+/**
+ * Yargı türünü BİRİM ADINDAN çıkarır — UYAP dosya listesinde yargiTuruAdi
+ * gelmiyor, yalnız kodlar var. Birim adı gerçek kaynak; uydurmuyoruz.
+ */
+function yargiTuruDenBirim(birim) {
+  const b = (birim || '').toLocaleLowerCase('tr');
+  if (!b) return null;
+  if (b.includes('ceza')) return 'ceza';
+  if (b.includes('icra') || b.includes('i̇cra')) return 'icra';
+  if (b.includes('idare') || b.includes('idari') || b.includes('vergi')) return 'idari';
+  if (b.includes('hukuk') || b.includes('asliye') || b.includes('sulh') ||
+      b.includes('aile') || b.includes('iş ') || b.includes('tüketici') ||
+      b.includes('ticaret') || b.includes('kadastro')) return 'hukuk';
+  return null;
+}
+
+/**
  * Dosya durumunu panelin beklediği küçük harfe indirger. UYAP "AÇIK"/"KAPALI"
  * gibi büyük harf veya karışık dönüyor; panel renklendirmesi (yeşil/nötr) buna
  * bakıyor. Tanınmayan değer olduğu gibi (temizlenmiş) geçer.
@@ -437,31 +466,31 @@ async function dosyalar() {
   const gorulen = new Set();
   const cikti = [];
   for (const s of hamSatirlar) {
-    const dosya_no = alan(s, 'dosyaNo', 'esasNo', 'dosyaNumarasi');
+    // esasNo İLK aday: UYAP dosya no'yu esasNo olarak veriyor (dosyaNo yok).
+    const dosya_no = alan(s, 'esasNo', 'dosyaNo', 'dosyaNumarasi');
     const birim = alan(s, 'birimAdi', 'birim', 'mahkemeAdi');
     const acilis_tarihi = tarih(alan(s, 'dosyaAcilisTarihi', 'acilisTarihi', 'acilisTarih'));
 
     // KİMLİK = İÇERİK, jeton DEĞİL. UYAP dosyaId'yi her sorguda farklı şifreli
-    // jeton olarak veriyor → idempotency anahtarı olamaz (aynı dosya çift kayıt
-    // oluyordu). uyap_ref içerikten türetiliyor: aynı dosya her senkronda aynı.
+    // jeton olarak veriyor → idempotency anahtarı olamaz (çift kayıt oluyordu).
     const uyap_ref = ref(dosya_no, birim, acilis_tarihi);
     if (gorulen.has(uyap_ref)) continue;      // açık/kapalı sorguları çakışabilir
     gorulen.add(uyap_ref);
 
-    // Opak jeton AYRI taşınıyor: safahat/evrak/taraf çağrıları HÂLÂ bunu istiyor
-    // (o çağrılar aynı oturumda, jeton o oturumda geçerli). Panele YAZILMIYOR.
-    const _dosyaId = alan(s, 'dosyaId', 'dosyaID', 'id');
+    // Opak jeton AYRI + TIRNAKSIZ: alt-uç çağrıları bunu istiyor, tırnak kalırsa
+    // boş dönüyorlar. Panele YAZILMIYOR.
+    const _dosyaId = jetonTemizle(alan(s, 'dosyaId', 'dosyaID', 'id'));
 
-    const durumHam = alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum');
     cikti.push({
       uyap_ref,
       dosya_no,
       birim,
-      yargi_turu: alan(s, 'yargiTuruAdi', 'yargiTuru', 'yargiTipi', 'yargiTuruAciklama'),
-      dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru', 'dosyaTurAdi'),
+      yargi_turu: yargiTuruDenBirim(birim),   // birim adından, ad alanı gelmiyor
+      dosya_turu: alan(s, 'dosyaTuruAdi', 'dosyaTuru', 'dosyaTurKod'),   // yalnız kod
+      rol: alan(s, 'rol', 'tarafRolu'),        // kullanıcının bu dosyadaki rolü
       taraflar: alan(s, 'taraflar', 'tarafAdi', 'karsiTaraf'),
       acilis_tarihi,
-      durum: normalizeDurum(durumHam),
+      durum: normalizeDurum(alan(s, 'dosyaDurumu', 'durum', 'dosyaDurum')),
       _dosyaId,
       _alanlar: Object.keys(s),
     });

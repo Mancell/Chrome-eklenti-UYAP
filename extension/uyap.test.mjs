@@ -50,7 +50,8 @@ function yukle() {
   return vm.runInContext(
     '({ xmlAyristir, xmlSatirlar, ref, tarih, alan, UCLAR, eksikUc,' +
     '   dosyaListesiDomdan, satirdanDosyaId, basligiEsle, veriTablosu,' +
-    '   tablodanSatirlar, htmlBelge, satirlara, temizle, normalizeDurum, tarafMetni })', g);
+    '   tablodanSatirlar, htmlBelge, satirlara, temizle, normalizeDurum, tarafMetni,' +
+    '   jetonTemizle, yargiTuruDenBirim })', g);
 }
 
 const U = yukle();
@@ -368,7 +369,7 @@ test('dosya kaydının alanları şema kolonlarını karşılıyor', () => {
     .filter((a) => !a.startsWith('_'));
   // 0001_sema.sql dosyalar kolonları (kullanici_id/olusturuldu/guncellendi hariç):
   const sema = ['uyap_ref', 'dosya_no', 'birim', 'yargi_turu', 'dosya_turu',
-                'taraflar', 'acilis_tarihi', 'durum'];
+                'rol', 'taraflar', 'acilis_tarihi', 'durum'];
   for (const a of anahtarlar) {
     assert.ok(sema.includes(a), `dosya kaydında şemada olmayan alan: ${a}`);
   }
@@ -396,4 +397,26 @@ test('aynı dosya farklı jetonla → AYNI uyap_ref (çift kayıt önlenir)', ()
   assert.equal(a, b, 'aynı dosya aynı ref üretmeli');
   const farkli = U.ref('2025/404', 'İstanbul 24. Ağır Ceza', '2025-12-19');
   assert.notEqual(a, farkli, 'farklı dosya farklı ref');
+});
+
+
+// ---------------------------------------------------------------------------
+// Jeton tırnak temizliği — İÇERİĞİN ANAHTARI. UYAP jetonu XML'de tırnaklı
+// veriyor ama alt-uç çağrılarında tırnaksız istiyor; tırnak kalırsa
+// safahat/evrak/taraf boş dönüyordu (gerçek veride "0 safahat 0 evrak").
+// ---------------------------------------------------------------------------
+test('jetonTemizle: XML tırnağını soyuyor, base64 gövdesini bozmuyor', () => {
+  assert.equal(U.jetonTemizle('"ww6iHinZvx+hluPRY/61c="'), 'ww6iHinZvx+hluPRY/61c=');
+  assert.equal(U.jetonTemizle('ww6+/='), 'ww6+/=', 'tırnaksız zaten temiz');
+  assert.equal(U.jetonTemizle('""'), null, 'sadece tırnak → null');
+  assert.equal(U.jetonTemizle(null), null);
+});
+
+test('yargiTuruDenBirim: birim adından çıkarım (ad alanı gelmiyor)', () => {
+  assert.equal(U.yargiTuruDenBirim('İstanbul 24. Ağır Ceza Mahkemesi'), 'ceza');
+  assert.equal(U.yargiTuruDenBirim('Ankara 1. Asliye Hukuk Mahkemesi'), 'hukuk');
+  assert.equal(U.yargiTuruDenBirim('İstanbul 3. İcra Müdürlüğü'), 'icra');
+  assert.equal(U.yargiTuruDenBirim('Bölge İdare Mahkemesi'), 'idari');
+  assert.equal(U.yargiTuruDenBirim('Belirsiz Birim'), null, 'tanınmayan → null, uydurmuyoruz');
+  assert.equal(U.yargiTuruDenBirim(''), null);
 });

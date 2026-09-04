@@ -78,7 +78,20 @@ function SenkronSerit() {
     );
   }
   if (son.durum === 'basladi') {
-    return <div style={seritStil('#fff7e6', '#8a6100')}>⏳ Senkron sürüyor… {son.mesaj ?? ''}</div>;
+    const yuzde = son.toplam ? Math.round(((son.islenen ?? 0) / son.toplam) * 100) : null;
+    return (
+      <div style={seritStil('#fff7e6', '#8a6100')}>
+        <div>⏳ Senkron sürüyor… {son.mesaj ?? ''}</div>
+        {yuzde !== null && (
+          <div style={{ marginTop: 6, height: 6, background: '#f0e4c8', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              width: `${yuzde}%`, height: '100%', background: '#d9a441',
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+        )}
+      </div>
+    );
   }
   if (son.durum === 'hata') {
     return <div style={seritStil('#fdecea', '#ae1800')}>⚠ Senkron hatası: {son.mesaj ?? ''}</div>;
